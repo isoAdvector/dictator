@@ -1,0 +1,74 @@
+# Hand-written entries for the core dictionaries, for keywords where the
+# OpenFOAM tree states a type but no meaning. Appended by makeDictatorHelp.
+# scope	path	type	required	default	options	description	source
+controlDict	application	word	optional			Name of the solver executable run for this case.	curated
+controlDict	startFrom	word	optional	latestTime	firstTime;startTime;latestTime	Which time directory the run starts from.	curated
+controlDict	startTime	scalar	required with startFrom startTime			Time to start from, used when startFrom is startTime.	curated
+controlDict	stopAt	word	optional	endTime	endTime;writeNow;noWriteNow;nextWrite	Condition under which the run stops.	curated
+controlDict	endTime	scalar	required with stopAt endTime			Time at which the run stops, used when stopAt is endTime.	curated
+controlDict	deltaT	scalar	required			Time step. The initial time step when adjustTimeStep is on.	curated
+controlDict	writeControl	word	optional	timeStep	timeStep;runTime;adjustable;adjustableRunTime;clockTime;cpuTime;none	What writeInterval is counted in. adjustable also nudges the time step so writes land on exact intervals.	curated
+controlDict	writeInterval	scalar	required			Interval between writes, in the unit chosen by writeControl.	curated
+controlDict	purgeWrite	label	optional	0		Number of time directories to keep, oldest deleted first. 0 keeps all.	curated
+controlDict	writeFormat	word	optional	ascii	ascii;binary	Format of the written field files.	curated
+controlDict	writePrecision	label	optional	6		Significant figures used when writing ascii fields.	curated
+controlDict	writeCompression	Switch	optional	off		Whether written files are gzip compressed.	curated
+controlDict	timeFormat	word	optional	general	general;fixed;scientific	Format of the time directory names.	curated
+controlDict	timePrecision	label	optional	6		Significant figures in the time directory names.	curated
+controlDict	runTimeModifiable	Switch	optional	false		Whether dictionaries are re-read at the start of each time step, so a case can be changed while it runs. Off by default, though most tutorials switch it on.	curated
+controlDict	adjustTimeStep	Switch	optional	false		Whether the time step is adjusted to satisfy the Courant limits.	curated
+controlDict	maxCo	scalar	optional	1		Maximum Courant number allowed when adjustTimeStep is on.	curated
+controlDict	maxAlphaCo	scalar	required			Maximum Courant number evaluated at the interface, read by the VoF solvers alongside maxCo. Usually the binding limit for interface capturing. Has no default: a VoF solver that computes an interface Courant number stops without it.	curated
+controlDict	maxDeltaT	scalar	optional	GREAT		Upper limit on the time step when adjustTimeStep is on. The default GREAT means no limit, so the Courant condition alone sets the step.	curated
+controlDict	graphFormat	word	optional	raw		Format of graph data written by function objects.	curated
+controlDict	libs	wordList	optional			Extra libraries loaded at start-up, for solvers, models or function objects not in the executable.	curated
+controlDict	functions	dictionary	optional			Function objects run during the simulation, for sampling, monitoring and derived fields.	curated
+fvSolution	solvers	dictionary	required			Linear solver settings, one sub-dictionary per field.	curated
+fvSolution	solver	word	required		PCG;PBiCG;PBiCGStab;GAMG;smoothSolver;diagonal;PPCG;PPCR	Linear solver used for this field. PCG and GAMG suit symmetric matrices such as pressure, PBiCGStab the asymmetric ones.	curated
+fvSolution	preconditioner	word	required by PCG, PBiCG and PBiCGStab		DIC;DILU;diagonal;FDIC;GAMG;none	Preconditioner for a Krylov solver. DIC pairs with symmetric matrices, DILU with asymmetric.	curated
+fvSolution	smoother	word	required by GAMG and smoothSolver		GaussSeidel;symGaussSeidel;DIC;DICGaussSeidel;DILU;DILUGaussSeidel	Smoother used by GAMG and smoothSolver.	curated
+fvSolution	tolerance	scalar	optional	1e-6		Absolute residual at which the linear solve stops.	curated
+fvSolution	relTol	scalar	optional	0		Factor by which the residual must fall within one solve. 0, the default, forces the solve to the absolute tolerance, which is what a final corrector normally wants.	curated
+fvSolution	maxIter	label	optional	1000		Maximum iterations of the linear solver.	curated
+fvSolution	nSweeps	label	optional	1		Sweeps performed by the smoother between residual checks.	curated
+fvSolution	nCellsInCoarsestLevel	label	optional	10		Cells in the coarsest GAMG level, where the equation is solved directly.	curated
+fvSolution	agglomerator	word	optional	faceAreaPair	faceAreaPair;algebraicPair	How GAMG groups cells when coarsening.	curated
+fvSolution	mergeLevels	label	optional	1		GAMG levels merged per coarsening step.	curated
+fvSolution	cacheAgglomeration	Switch	optional	true		Whether the GAMG agglomeration is kept between solves. Turn off on a moving mesh.	curated
+fvSolution	PIMPLE	dictionary	optional			Controls for the PIMPLE pressure-velocity loop used by transient solvers.	curated
+fvSolution	SIMPLE	dictionary	optional			Controls for the SIMPLE pressure-velocity loop used by steady solvers.	curated
+fvSolution	PISO	dictionary	optional			Controls for the PISO pressure-velocity loop.	curated
+fvSolution	nCorrectors	label	optional	1		Pressure corrector solves per outer iteration.	curated
+fvSolution	nOuterCorrectors	label	optional	1		Outer iterations per time step. 1 makes PIMPLE behave as PISO; more allows a larger time step at the cost of work per step.	curated
+fvSolution	nNonOrthogonalCorrectors	label	optional	0		Extra pressure solves correcting for mesh non-orthogonality.	curated
+fvSolution	momentumPredictor	Switch	optional	true		Whether the momentum equation is solved before the pressure correction. Often off for interface-dominated flows.	curated
+fvSolution	consistent	Switch	optional	false		Use SIMPLEC rather than SIMPLE, which tolerates larger relaxation factors.	curated
+fvSolution	pRefCell	label	required when no boundary fixes the pressure			Cell whose pressure is pinned when no boundary sets the pressure level. The keyword follows the field name, so a VoF solver wants p_rghRefCell. Supply this or pRefPoint.	curated
+fvSolution	pRefValue	scalar	required when no boundary fixes the pressure			Pressure imposed at pRefCell or pRefPoint. The keyword follows the field name, so a VoF solver wants p_rghRefValue.	curated
+fvSolution	residualControl	dictionary	optional			Residual levels at which the outer loop or the run is considered converged.	curated
+fvSolution	relaxationFactors	dictionary	optional			Under-relaxation applied to equations and fields.	curated
+fvSolution	nAlphaCorr	label	required			Correctors applied to the phase fraction equation. Read from the alpha solver sub-dictionary, and has no default.	curated
+fvSolution	nAlphaSubCycles	label	required			Sub-cycles of the phase fraction equation per time step, letting alpha run at a smaller step than the momentum equation. Read from the alpha solver sub-dictionary, and has no default.	curated
+fvSolution	cAlpha	scalar	required by interFoam			Strength of the artificial interface compression used by MULES, read from the alpha solver sub-dictionary. Not used by isoAdvector, which resolves the interface geometrically, so interIsoFoam does not need it.	curated
+fvSolution	MULESCorr	Switch	optional	false		Use the semi-implicit MULES limiter, which permits a larger alpha Courant number.	curated
+fvSolution	nLimiterIter	label	optional	3		Iterations of the MULES limiter.	curated
+fvSolution	alphaApplyPrevCorr	Switch	optional	false		Reuse the previous time step's MULES correction as a starting point.	curated
+fvSolution	reconstructionScheme	word	required		isoAlpha;plicRDF;gradAlpha	How isoAdvector reconstructs the interface plane in each cell. plicRDF iterates on the reconstructed distance function and is more accurate on unstructured meshes. There is no default: the reconstruction reports a fatal error if the entry is absent.	curated
+fvSolution	isoFaceTol	scalar	optional	1e-8		Tolerance for locating the isosurface within a cell.	curated
+fvSolution	surfCellTol	scalar	optional	1e-8		Phase fraction bounds within which a cell counts as an interface cell.	curated
+fvSolution	nAlphaBounds	label	optional	3		Passes of the bounding step applied to alpha after advection.	curated
+fvSolution	snapTol	scalar	optional	0		Below this distance from 0 or 1, a phase fraction is snapped to it.	curated
+fvSolution	clip	Switch	optional	true		Whether the phase fraction is clipped to [0,1].	curated
+fvSchemes	ddtSchemes	dictionary	required			Discretisation of the time derivative.	curated
+fvSchemes	gradSchemes	dictionary	required			Discretisation of gradient terms.	curated
+fvSchemes	divSchemes	dictionary	required			Discretisation of divergence, that is convection, terms.	curated
+fvSchemes	laplacianSchemes	dictionary	required			Discretisation of Laplacian, that is diffusion, terms.	curated
+fvSchemes	interpolationSchemes	dictionary	required			Interpolation of cell values to faces.	curated
+fvSchemes	snGradSchemes	dictionary	required			Discretisation of the surface-normal gradient.	curated
+fvSchemes	fluxRequired	dictionary	optional			Fields for which the face flux is stored after the solve.	curated
+fvSchemes	ddtSchemes.default	word	required		Euler;backward;CrankNicolson;steadyState;localEuler	Time scheme. Euler is first order and stable, backward and CrankNicolson second order and less dissipative, steadyState drops the term.	curated
+fvSchemes	gradSchemes.default	word	required		Gauss linear;leastSquares;cellLimited Gauss linear 1	Gradient scheme. A cellLimited variant bounds the gradient on poor meshes.	curated
+fvSchemes	divSchemes.default	word	required		none;Gauss linear;Gauss upwind;Gauss limitedLinear 1	Fallback convection scheme. Usually none, so that every divergence term must be named explicitly.	curated
+fvSchemes	laplacianSchemes.default	word	required		Gauss linear corrected;Gauss linear limited corrected 0.33;Gauss linear orthogonal	Laplacian scheme. The trailing word sets the non-orthogonal correction; corrected suits a good mesh, limited a poor one.	curated
+fvSchemes	interpolationSchemes.default	word	required		linear;cubic;midPoint	Cell-to-face interpolation.	curated
+fvSchemes	snGradSchemes.default	word	required		corrected;limited corrected 0.33;orthogonal;uncorrected	Surface-normal gradient, with the same non-orthogonality trade-off as the Laplacian schemes.	curated

@@ -1,0 +1,289 @@
+#!/bin/bash
+
+# Build the parameter database that "dictator <file> <parameter> -help" reads, by
+# extracting what an OpenFOAM source tree already states about its own dictionary
+# keywords.
+#
+#   makeDictatorHelp [openfoamRoot] > dictatorHelp
+#
+# openfoamRoot defaults to $WM_PROJECT_DIR. Re-run it against a newer OpenFOAM to
+# refresh the database.
+#
+# Five sources are read. Nothing is invented: every field can be traced back to the
+# file the source column names.
+#
+#   E1  typed reads      get<scalar>("maxAlphaCo"), getOrDefault<label>("k", 3)
+#                        -> type, whether required, default
+#   E2  untyped reads    readIfPresent("purgeWrite", purgeWrite_) resolved against
+#                        the declaration "label purgeWrite_;" in the same class
+#                        -> type, whether required
+#   E3  doxygen tables   \table Property | Description | Reqd | Default \endtable
+#                        -> description, whether required, default
+#   E4  Enum blocks      Enum<T> xNames({{T::a,"none"},...}) read through a keyword
+#                        -> the permitted options
+#   E5  etc/caseDicts/annotated/*  -> the comment lines above a keyword
+#
+# Records are tab separated, one keyword per line:
+#
+#   scope  path  type  required  default  options  description  source
+#
+# scope is the dictionary the keyword belongs to, or "*" when that could not be
+# determined; attribution falls back to "*" rather than guessing. A keyword read in
+# several places with different types or defaults reports the most common and marks
+# the field "(varies)", since claiming one of them would be misleading.
+#
+# Copyright (C) 2026 Johan Roenby, STROMNING
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version. See the file LICENSE, or <https://www.gnu.org/licenses/>.
+
+set -u
+
+FOAM="${1:-${WM_PROJECT_DIR:-}}"
+if [ -z "$FOAM" ] || [ ! -d "$FOAM/src" ]; then
+    echo "usage: makeDictatorHelp [openfoamRoot] > dictatorHelp" >&2
+    echo "  openfoamRoot must hold src/ and applications/; \$WM_PROJECT_DIR is" >&2
+    echo "  used when no argument is given" >&2
+    exit 1
+fi
+
+work=$(mktemp -d) || exit 1
+trap 'rm -rf "$work"' EXIT
+srcdirs="$FOAM/src $FOAM/applications"
+
+note() { echo "makeDictatorHelp: $*" >&2; }
+note "reading $FOAM"
+
+# Which dictionary is being read from, judged by the name of the object the read is
+# called on. Anything unrecognised stays "*".
+scopeOf() { :; }
+
+
+# ---------------------------------------------------------------------------
+# E1  A typed read states the type outright; getOrDefault also gives the default,
+#     and get<T> marks the keyword required.
+# ---------------------------------------------------------------------------
+note "E1 typed reads"
+grep -rhoE '[A-Za-z_][A-Za-z0-9_]*(\(\))?\.(get|getOrDefault|lookupOrDefault|getOrAdd)<[A-Za-z:<>, ]+> *\( *"[A-Za-z_][A-Za-z0-9_]*" *(, *[^,()]*)?' \
+    $srcdirs --include='*.C' --include='*.H' 2>/dev/null |
+awk '
+{
+    recv = $0; sub(/\..*/, "", recv)
+    fn = $0; sub(/^[^.]*\./, "", fn); sub(/<.*/, "", fn)
+    t  = $0; sub(/^[^<]*</, "", t);  sub(/>.*/, "", t)
+    k  = $0; sub(/^[^"]*"/, "", k);  sub(/".*/, "", k)
+    d = ""
+    if (match($0, /" *, */)) { d = substr($0, RSTART + RLENGTH); gsub(/^ +| +$/, "", d) }
+    scope = "*"
+    if (recv ~ /^controlDict/)                       scope = "controlDict"
+    else if (recv ~ /solutionDict|pimpleDict|simpleDict|pisoDict/) scope = "fvSolution"
+    print scope "\t" k "\t" t "\t" ((fn == "get") ? "required" : "optional") "\t" d
+}' | sort > "$work/e1"
+note "   $(wc -l < "$work/e1") records"
+
+
+# ---------------------------------------------------------------------------
+# E2  An untyped read names a member variable rather than a type. The declaration
+#     has to be looked up in the class that does the reading: member names such as
+#     endTime_ are reused across classes with different types, so a lookup by name
+#     alone would report the wrong one.
+# ---------------------------------------------------------------------------
+note "E2 untyped reads, resolved per class"
+grep -rHoE '^ *(mutable +|static +|const +)*(scalar|label|bool|Switch|word|fileName|string|dimensionedScalar|vector|scalarList|labelList|wordList|wordRes) +[A-Za-z_][A-Za-z0-9_]*_ *;' \
+    $srcdirs --include='*.H' 2>/dev/null |
+awk -F: '{ decl = $2; gsub(/^ +|;.*$/, "", decl)
+           n = split(decl, a, / +/)                    # type is the token before the member
+           stem = $1; sub(/\.[HC]$/, "", stem)
+           dir = $1; sub(/\/[^\/]*$/, "", dir)
+           print stem "\t" a[n] "\t" a[n-1]
+           print dir "/*\t" a[n] "\t" a[n-1] }' | sort -u > "$work/members"
+
+grep -rHoE '[A-Za-z_][A-Za-z0-9_]*(\(\))?\.(readEntry|readIfPresent) *\( *"[A-Za-z_][A-Za-z0-9_]*" *, *[A-Za-z_][A-Za-z0-9_]*_' \
+    $srcdirs --include='*.C' --include='*.H' 2>/dev/null |
+awk -F: '{ stem = $1; sub(/\.[HC]$/, "", stem)
+           rest = $2
+           recv = rest; sub(/\..*/, "", recv)
+           fn = rest; sub(/^[^.]*\./, "", fn); sub(/ *\(.*/, "", fn)
+           k = rest; sub(/^[^"]*"/, "", k); sub(/".*/, "", k)
+           m = rest; sub(/.*, */, "", m)
+           scope = "*"
+           if (recv ~ /^controlDict/)                             scope = "controlDict"
+           else if (recv ~ /solutionDict|pimpleDict|simpleDict/)  scope = "fvSolution"
+           print stem "\t" m "\t" scope "\t" k "\t" ((fn == "readEntry") ? "required" : "optional") }' \
+    | sort -u > "$work/e2raw"
+
+# Resolve the member against the class that declares it: exactly, when the read and
+# the declaration share a file stem, otherwise against the directory, since a class
+# is declared in X.H but often read in XIO.C. Member names such as endTime_ are
+# reused across classes with different types, so a lookup by bare name would report
+# the wrong one.
+awk -F'\t' 'NR == FNR { type[$1 "\t" $2] = $3; next }
+            {
+                dir = $1; sub(/\/[^\/]*$/, "", dir)
+                k = ($1 "\t" $2) in type ? $1 "\t" $2 :
+                    ((dir "/*\t" $2) in type ? dir "/*\t" $2 : "")
+                if (k != "") print $3 "\t" $4 "\t" type[k] "\t" $5 "\t"
+            }' "$work/members" "$work/e2raw" | sort > "$work/e2"
+note "   $(wc -l < "$work/e2") records from $(wc -l < "$work/members") declarations"
+
+
+# ---------------------------------------------------------------------------
+# E3  Doxygen tables carry the prose. The class the table belongs to is used as the
+#     scope, since these describe function objects, boundary conditions and models
+#     rather than the top level case dictionaries.
+# ---------------------------------------------------------------------------
+note "E3 doxygen property tables"
+grep -rl 'Property *| *Description' $srcdirs --include='*.H' 2>/dev/null |
+while IFS= read -r f; do
+    awk -v cls="$(basename "$f" .H)" '
+        /\\table/            { intab = 1; next }
+        /\\endtable/         { intab = 0; next }
+        intab && /\|/ {
+            line = $0
+            sub(/^ *\/\/ */, "", line); sub(/^ */, "", line)
+            n = split(line, col, / *\| */)
+            if (n < 2) next
+            gsub(/^ +| +$/, "", col[1]); gsub(/^ +| +$/, "", col[2])
+            if (col[1] == "" || col[1] ~ /^Property$/ || col[1] ~ /[^A-Za-z0-9_]/) next
+            req = ""; def = ""
+            if (n >= 3) { req = col[3]; gsub(/^ +| +$/, "", req) }
+            if (n >= 4) { def = col[4]; gsub(/^ +| +$/, "", def) }
+            req = (req ~ /^(yes|Yes|y)$/) ? "required" : (req ~ /^(no|No|n)$/ ? "optional" : "")
+            gsub(/\t/, " ", col[2])
+            print cls "\t" col[1] "\t\t" req "\t" def "\t\t" col[2]
+        }' "$f"
+done | sort -u > "$work/e3"
+note "   $(wc -l < "$work/e3") records"
+
+
+# ---------------------------------------------------------------------------
+# E4  An Enum block lists the permitted words for a keyword. The block is tied to a
+#     keyword by a read performed through the same Enum object.
+# ---------------------------------------------------------------------------
+note "E4 enumerated options"
+grep -rhA2 -E '[A-Za-z_][A-Za-z0-9_]*Names *\. *(read|get|lookup)' \
+    $srcdirs --include='*.C' --include='*.H' 2>/dev/null |
+    awk 'BEGIN { RS = "--\n" } { gsub(/\n/, " "); print }' |
+    grep -oE '[A-Za-z_][A-Za-z0-9_]*Names *\. *(read|get|lookup)[A-Za-z]* *\([^;]{0,80}?"[A-Za-z_][A-Za-z0-9_]*"' |
+    awk '{ e = $0; sub(/ *\..*/, "", e)
+           k = $0; sub(/^[^"]*"/, "", k); sub(/".*/, "", k)
+           print e "\t" k }' | sort -u > "$work/enumkeys"
+
+grep -rhA30 -E '^(Foam::)?[A-Za-z_:]*::[A-Za-z_][A-Za-z0-9_]*Names$' $srcdirs --include='*.C' 2>/dev/null |
+awk '
+    /Names$/  { e = $0; sub(/.*::/, "", e); cur = e; opts[cur] = opts[cur]; next }
+    /^\}\);/  { cur = ""; next }
+    cur != "" && /"[^"]+"/ {
+        o = $0; sub(/^[^"]*"/, "", o); sub(/".*/, "", o)
+        if (o != "") opts[cur] = opts[cur] (opts[cur] == "" ? "" : ";") o
+    }
+    END { for (e in opts) if (opts[e] != "") print e "\t" opts[e] }' | sort -u > "$work/enumopts"
+
+awk -F'\t' 'NR == FNR { o[$1] = $2; next }
+            ($1 in o) { print "*\t" $2 "\tword\t\t\t" o[$1] "\t" }' \
+    "$work/enumopts" "$work/enumkeys" | sort -u > "$work/e4"
+note "   $(wc -l < "$work/e4") records from $(wc -l < "$work/enumopts") enums"
+
+
+# ---------------------------------------------------------------------------
+# E5  The annotated templates comment their keywords directly. The comment lines
+#     immediately above a keyword describe it; the file name gives the scope.
+# ---------------------------------------------------------------------------
+note "E5 annotated templates"
+for f in "$FOAM"/etc/caseDicts/annotated/*; do
+    [ -f "$f" ] || continue
+    case $(basename "$f") in README.md) continue ;; esac
+    awk -v scope="$(basename "$f")" '
+        /^ *\/\/ *\**$/ { next }                       # rule-off lines
+        /^ *\/\// { c = $0; sub(/^ *\/\/ *​?/, "", c); sub(/^ *\/\/ */, "", c)
+                    gsub(/\t/, " ", c)
+                    if (c != "") buf = buf (buf == "" ? "" : " ") c
+                    next }
+        /^ *[A-Za-z_][A-Za-z0-9_]* / {
+            k = $1
+            if (buf != "" && length(buf) < 300 && k !~ /[^A-Za-z0-9_]/)
+                print scope "\t" k "\t\t\t\t\t" buf
+            buf = ""; next }
+        { buf = "" }' "$f"
+done | sort -u > "$work/e5"
+note "   $(wc -l < "$work/e5") records"
+
+
+# ---------------------------------------------------------------------------
+# Merge. Fields are filled from the most reliable source that offers them, and a
+# field with conflicting values across the tree is reported as "(varies)" with the
+# most common value, rather than silently picking one.
+# ---------------------------------------------------------------------------
+note "merging"
+{
+    awk -F'\t' '{ print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t\t\tE1" }' "$work/e1"
+    awk -F'\t' '{ print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t\t\tE2" }' "$work/e2"
+    awk -F'\t' '{ print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\tE3" }' "$work/e3"
+    awk -F'\t' '{ print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\tE4" }' "$work/e4"
+    awk -F'\t' '{ print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 "\t" $6 "\t" $7 "\tE5" }' "$work/e5"
+} |
+awk -F'\t' '
+function best(counts, key,   k, bk, bn, n, tot, distinct) {
+    bn = -1; tot = 0; distinct = 0
+    for (k in counts) {
+        if (index(k, key SUBSEP) != 1) continue
+        n = counts[k]; tot += n; distinct++
+        if (n > bn) { bn = n; bk = k }
+    }
+    if (distinct == 0) return ""
+    sub(key SUBSEP, "", bk)
+    return (distinct > 1) ? bk " (varies)" : bk
+}
+{
+    id = $1 SUBSEP $2
+    seen[id] = 1
+    # the annotated templates and doxygen tables carry list bullets and stray
+    # punctuation into the prose; the display re-wraps, so strip them here
+    sub(/^[-*:.[:space:]]+/, "", $7)
+    sub(/[[:space:]]+$/, "", $7)
+    if ($3 != "") types[id SUBSEP $3]++
+    if ($4 != "") reqs[id SUBSEP $4]++
+    if ($5 != "") defs[id SUBSEP $5]++
+    if ($6 != "" && length($6) > length(opts[id])) opts[id] = $6
+    if ($7 != "" && length($7) > length(desc[id])) { desc[id] = $7; from[id] = $8 }
+    src[id] = src[id] (index(src[id], $8) ? "" : (src[id] == "" ? "" : "+") $8)
+}
+END {
+    for (id in seen) {
+        split(id, a, SUBSEP)
+        printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a[1], a[2],
+               best(types, id), best(reqs, id), best(defs, id),
+               opts[id], desc[id], src[id]
+    }
+}' | sort -t"$(printf '\t')" -k2,2 -k1,1 > "$work/merged"
+
+nrec=$(wc -l < "$work/merged")
+note "$nrec records"
+
+# The release is taken from META-INFO/api-info, which names the API version
+# independently of what the directory happens to be called.
+api=$(sed -n 's/^api=//p' "$FOAM/META-INFO/api-info" 2>/dev/null)
+patch=$(sed -n 's/^patch=//p' "$FOAM/META-INFO/api-info" 2>/dev/null)
+if [ -n "$api" ]; then
+    version=v$api
+    [ -n "$patch" ] && [ "$patch" != 0 ] && version=$version" patch $patch"
+else
+    version=$(basename "$FOAM")
+fi
+
+printf '# dictator parameter database\n'
+printf '# openfoam %s\n' "$version"
+printf '# generated by makeDictatorHelp from %s on %s\n' "$FOAM" "$(date +%Y-%m-%d)"
+printf '# scope\tpath\ttype\trequired\tdefault\toptions\tdescription\tsource\n'
+printf '# source: E1 typed read, E2 untyped read, E3 doxygen table, E4 enum, E5 annotated\n'
+printf '#         template, curated = written by hand where the tree states no meaning\n'
+cat "$work/merged"
+
+# Hand-written entries for the core dictionaries, appended last so a lookup that
+# prefers the final match picks them over the extracted ones.
+if [ -f "${0%/*}/dictatorHelp.curated" ]; then
+    note "appending curated core"
+    grep -v '^#' "${0%/*}/dictatorHelp.curated"
+fi
