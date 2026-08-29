@@ -3,25 +3,16 @@
 Inspect, set and explain OpenFOAM dictionary parameters from the command line,
 with tab completion at every position.
 
-Because OpenFOAM dictionaries should be easy to boss around.
+Because OpenFOAM dictionaries should be easy to boss around:
 
-```
-$ dictator system/fvSolution PIMPLE.<TAB>
-PIMPLE.momentumPredictor  PIMPLE.nCorrectors  PIMPLE.nOuterCorrectors  ...
 
-$ dictator system/fvSolution PIMPLE.nOuterCorrectors <TAB>
-$ dictator system/fvSolution PIMPLE.nOuterCorrectors 1
+![Terminal Demo](dictator.gif)
 
-$ dictator system/fvSolution PIMPLE.nOuterCorrectors -help
-PIMPLE.nOuterCorrectors  =  1
-  label, optional, default 1   [fvSolution, curated, v2506]
-  Outer iterations per time step. 1 makes PIMPLE behave as PISO; more allows a
-  larger time step at the cost of work per step.
-```
 
-No OpenFOAM installation is required to use it, and it never reformats your files:
-only the value you asked for is rewritten, so comments, layout, blank lines and full
-floating point precision all survive.
+No OpenFOAM installation is required to use it, and (in contrast to 
+foamDictionary) it never reformats your files:
+only the value you asked for is rewritten, so comments, layout, blank lines and
+full floating point precision all survive.
 
 ## Install
 
@@ -94,8 +85,8 @@ writeControl  =  adjustable
 A parameter the OpenFOAM sources never read says so, rather than guessing:
 
 ```
-$ dictator system/fvSchemes tis -help
-tis
+$ dictator system/fvSchemes ponzi -help
+ponzi
   No information. Not a keyword read anywhere in the OpenFOAM v2506 sources,
   so probably added by you, or read by a custom solver or function object.
 ```
