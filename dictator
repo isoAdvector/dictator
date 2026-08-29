@@ -239,10 +239,10 @@ getDictEntry() (
 #   setDictEntry [-add] <file> <entry.path> <value>
 #
 # Without -add only entries that already exist are modified, so a mistyped name is
-# reported rather than quietly creating a new entry. This is what parmScanner
-# relies on. With -add a missing entry is created instead, placed after the last
-# entry of its dictionary and indented to match. The dictionary it belongs to must
-# already exist. Returns 2 when an entry was added, 0 when one was replaced.
+# reported rather than quietly creating a new entry. With -add a missing entry is
+# created instead, placed after the last entry of its dictionary and indented to
+# match. The dictionary it belongs to must already exist. Returns 2 when an entry
+# was added, 0 when one was replaced.
 setDictEntry() (
     addMissing=
     [ "$1" = "-add" ] && { addMissing=1; shift; }
@@ -340,7 +340,7 @@ _dictHelp() (
 dictator() {
     if [ "$1" = "-help" ]; then
         cat <<'HELP'
-Inspect and set values in OpenFOAM dictionaries with auto-completion. 
+Inspect and set values in OpenFOAM dictionaries with tab auto-completion. 
 Copyright (C) 2026 Johan Roenby, STROMNING.
 Usage: dictator <dictFile> <parameter> [<value>|-help]
 
@@ -359,20 +359,13 @@ Usage: dictator <dictFile> <parameter> [<value>|-help]
     dictator system/fvSchemes 'div[TAB]          completes to 'divSchemes.
     dictator system/fvSchemes 'divSchemes.[TAB]r[TAB] -> 'divSchemes.div(rhoPhi,U)'
     dictator system/fvSolution 'solvers."pc[TAB] -> 'solvers."pcorr.*".
-    dictator system/controlDict writeControl -help
-      writeControl
-        word, required   [controlDict, curated]
-        What writeInterval is counted in. adjustable also nudges the time step so
-        writes land on exact intervals.
-        options: timeStep | runTime | adjustable | adjustableRunTime | clockTime |
-        cpuTime | none
+    dictator $FOAM_TUT[TAB]                      completes OpenFOAM's own paths
 
 Notes:
   Sub-dicts keep a trailing "." so that TAB steps into them.
   Names holding ( ) or * need quoting. Open a quote and TAB as usual; the closing
   quote is automatically added once the name is complete.
   The FoamFile header is left out of listings but can still be read by name.
-  See "parmScanner -help" for setDictEntry, getDictEntry and listDictEntries.
 HELP
         # the release is stamped into the database, so report what is installed
         sed -n 's/^# openfoam /  Parameter help generated from OpenFOAM /p' \
@@ -426,6 +419,21 @@ _dictator_level() {
 }
 
 
+# Resolve a leading ~ and any $VAR or ${VAR} in a word. OpenFOAM paths are
+# habitually written with its environment variables, and neither compgen -f nor
+# a [[ -f ]] test expands them. Only tilde and variable expansion happens here,
+# so nothing on the command line is executed to complete it.
+_dictator_expand() {
+    local w=$1 ref n=0
+    while [[ $w == *'$'* ]] && (( n++ < 16 )); do
+        [[ $w =~ \$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*) ]] || break
+        ref=${BASH_REMATCH[1]:-${BASH_REMATCH[2]}}
+        w=${w/"${BASH_REMATCH[0]}"/${!ref}}
+    done
+    [[ $w == '~'* ]] && w=$HOME${w#\~}
+    printf '%s' "$w"
+}
+
 _dictator_complete() {
     # Two readline facts shape this function. First, COMP_WORDS is split on
     # COMP_WORDBREAKS, which contains "(" and ":", so a name like
@@ -454,7 +462,8 @@ _dictator_complete() {
     done
     args+=("$word")                       # the word being completed, possibly empty
 
-    local file="${args[1]}" cur="$word" c
+    local file cur="$word" c
+    file=$(_dictator_expand "${args[1]}")   # so $FOAM_TUTORIALS/... names a file
     local inQuote=$quote                  # a quote is still open on this word
     local raw="$cur"                      # the parser already removed any escaping
     COMPREPLY=()
@@ -462,8 +471,35 @@ _dictator_complete() {
     case $(( ${#args[@]} - 1 )) in
         1)  # A dictionary file. -o filenames appends "/" after a directory so the
             # path can be typed on, and a space after a file so TAB moves on.
-            compopt -o filenames 2>/dev/null
-            COMPREPLY=( $(compgen -f -- "$cur") )
+            local exp v m pre epre
+            # A "$" with no "/" yet is a variable name being typed. Complete it as
+            # bash itself would, since OpenFOAM paths usually start with one.
+            if [[ $cur == '$'* && $cur != */* ]]; then
+                for v in $(compgen -v -- "${cur#\$}"); do
+                    [[ -d ${!v} ]] && COMPREPLY+=( "\$$v/" ) || COMPREPLY+=( "\$$v" )
+                done
+                [[ ${#COMPREPLY[@]} -eq 1 && ${COMPREPLY[0]} == */ ]] &&
+                    compopt -o nospace 2>/dev/null
+                return
+            fi
+            exp=$(_dictator_expand "$cur")
+            if [[ $exp == "$cur" ]]; then
+                compopt -o filenames 2>/dev/null
+                COMPREPLY=( $(compgen -f -- "$cur") )
+            else
+                # Match on the expanded path but put the unexpanded prefix back, so
+                # the short $FOAM_TUTORIALS/... form stays on the command line. That
+                # rules out -o filenames, which would escape the "$", so the trailing
+                # "/" after a directory is appended here instead.
+                pre=${cur%/*}/; epre=${exp%/*}/
+                while IFS= read -r m; do
+                    [[ -z $m ]] && continue
+                    [[ -d $m ]] && m=$m/
+                    COMPREPLY+=( "$pre${m#"$epre"}" )
+                done < <(compgen -f -- "$exp")
+                [[ ${#COMPREPLY[@]} -eq 1 && ${COMPREPLY[0]} == */ ]] &&
+                    compopt -o nospace 2>/dev/null
+            fi
             ;;
         2)  # Any parameter path in that file. A name needing quotes is shown
             # quoted while the whole list is on display, which reads far better

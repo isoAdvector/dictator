@@ -18,7 +18,8 @@ full floating point precision all survive.
 
 ```sh
 git clone https://github.com/isoAdvector/dictator
-echo ". $PWD/dictator/dictator" >> ~/.bashrc
+echo >> ~/.bashrc && echo ". $PWD/dictator/dictator" >> ~/.bashrc
+source ~/.bashrc
 ```
 
 Then open a new terminal. dictator is a bash script and must be sourced from bash;
@@ -37,7 +38,12 @@ dictator system/controlDict endT<TAB>        -> endTime
 dictator system/controlDict endTime <TAB>    -> fills in the current value
 dictator system/controlDict endTime -<TAB>   -> -help
 dictator system/fvSolution 'solvers."pc<TAB> -> 'solvers."pcorr.*".
+dictator $FOAM_TUT<TAB>                      -> $FOAM_TUTORIALS/
 ```
+
+Paths written with OpenFOAM's environment variables complete as they would
+anywhere else in bash, and keep the short `$FOAM_TUTORIALS/...` form on the
+command line rather than expanding to the full path.
 
 Sub-dictionaries keep a trailing `.` so TAB steps into them one level at a time.
 Names containing `(`, `)` or `*` need quoting: open a quote and TAB as usual, and
