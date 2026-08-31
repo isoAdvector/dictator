@@ -1,0 +1,30 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| dictator test fixture: a minimal controlDict, so the -help lookup has a     |
+| real FoamFile.object scope to resolve against the curated database.         |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      controlDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+application     interIsoFoam;
+
+startFrom       startTime;
+startTime       0;
+stopAt          endTime;
+endTime         1;
+deltaT          0.001;
+
+writeControl    adjustableRunTime;
+writeInterval   0.05;
+
+adjustTimeStep  yes;
+maxCo           0.5;
+maxAlphaCo      0.5;
+maxDeltaT       1;
+
+// ************************************************************************* //

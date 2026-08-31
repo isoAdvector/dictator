@@ -1,0 +1,111 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield          | dictator test fixture                            |
+|  \\    /   O peration      | exercises the dictionary parser edge cases       |
+|   \\  /    A nd            |                                                 |
+|    \\/     M anipulation   |                                                 |
+\*---------------------------------------------------------------------------*/
+FoamFile
+{
+    version     2.0;
+    format      ascii;
+    class       dictionary;
+    object      testDict;
+}
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+
+#include          "someIncludedFile"
+#includeIfPresent "maybeMissingFile"
+
+// --- plain scalar / word / switch entries ---------------------------------
+scalarEntry     3.14159;
+wordEntry       kOmegaSST;
+switchEntry     yes;
+
+// --- list values --------------------------------------------------------
+emptyList       ( );
+intList         ( 1 2 3 4 );
+multiLineList
+(
+    0.1
+    0.2
+    0.3
+);
+
+// --- entries packed onto a single line --------------------------------
+packedA 1; packedB 2; packedC 3;
+
+// --- an entry whose value sits on the next line -------------------------
+splitEntry
+    splitValue;
+
+// --- an entry with no value at all -----------------------------------
+noValueEntry    ;
+
+// --- the same key twice in one dictionary (ambiguous on purpose) --------
+dupKey          first;
+dupKey          second;
+
+// --- a value carrying a trailing line comment --------------------------
+commentedValue  42;   // the answer
+
+// --- nested sub-dictionaries -----------------------------------------
+subDict
+{
+    alpha       0.5;
+    beta        1.5;
+    interp      table ( (0 1) (1 2) );
+    nested
+    {
+        gamma   2.5;
+        deep
+        {
+            delta   3.5;
+        }
+    }
+}
+
+// --- a dictionary that holds only sub-dictionaries, no direct entries --
+onlySubDicts
+{
+    inner
+    {
+        x       10;
+    }
+}
+
+// --- an empty dictionary --------------------------------------------
+emptyDict
+{
+}
+
+// --- quoted keys: regex solver names, and a dot inside the quotes ------
+solvers
+{
+    "(U|k|epsilon)"
+    {
+        solver          PBiCGStab;
+        preconditioner  DILU;
+        tolerance       1e-08;
+    }
+    "alpha.water.*"
+    {
+        nAlphaCorr      2;
+        cAlpha          1;
+    }
+    p
+    {
+        solver          PCG;
+        tolerance       1e-06;
+        relTol          0.05;
+    }
+}
+
+// --- quoted key with escaped parens -------------------------------
+divSchemes
+{
+    default             none;
+    "div\(phi,alpha\)"  Gauss vanLeer;
+}
+
+// ************************************************************************* //
