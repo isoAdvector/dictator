@@ -8,7 +8,7 @@ if [ -z "${BASH_VERSION:-}" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
-_DICTATOR_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_DICTATOR_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
 # dictator - inspect, set and explain OpenFOAM dictionary parameters, with tab
 # completion at every position. Source this file from bash; "dictator -help"
@@ -67,15 +67,19 @@ _dictScan() (
         return 1
     fi
 
-    # The new value is passed through the environment rather than -v so that awk
-    # does not interpret backslash escapes in it.
+    # The new value and the target path are passed through the environment rather
+    # than -v so that awk does not interpret backslash escapes in them: a quoted
+    # key such as divSchemes."div\(phi,U\)" carries backslashes, and how -v mangles
+    # them differs between awk implementations.
+    target="$entry" \
     awk -v mode="$mode" -v add="${4:-}" \
-        -v target="$entry" -v term="$term" -v dopen="$dopen" -v dclose="$dclose" \
+        -v term="$term" -v dopen="$dopen" -v dclose="$dclose" \
         -v lcom="$lcom" -v bopen="$bopen" -v bclose="$bclose" '
     # Scanned as a character stream, not line by line: the syntax is delimited by
     # white space of any kind, so entries and braces may be split over lines or
     # packed onto one.
-    BEGIN { value = ENVIRON["newValue"]; lc = length(lcom); bo = length(bopen) }
+    BEGIN { value = ENVIRON["newValue"]; target = ENVIRON["target"]
+            lc = length(lcom); bo = length(bopen) }
     # Position of the last "." in t that separates a parent path from a key. Dots
     # inside a quoted name, as in solvers."alpha.water.*".tolerance, are part of
     # the name and are skipped.
@@ -292,7 +296,8 @@ _dictHelp() (
     [ -n "$scope" ] || { scope=${file##*/}; scope=${scope%%.*}; }
     value=$(getDictEntry "$file" "$parm" 2>/dev/null)
 
-    awk -F'\t' -v scope="$scope" -v path="$parm" -v value="$value" -v width=78 '
+    parm="$parm" value="$value" \
+    awk -F'\t' -v scope="$scope" -v width=78 '
     function wrap(text, indent,   n, i, line, out) {
         n = split(text, w, / +/)
         line = indent; out = ""
@@ -304,17 +309,18 @@ _dictHelp() (
         }
         return out line
     }
-    BEGIN { leaf = path; sub(/^.*\./, "", leaf); best = 99 }
+    BEGIN { path = ENVIRON["parm"]; value = ENVIRON["value"]
+            leaf = path; sub(/^.*\./, "", leaf); best = 99 }
     /^# openfoam / { version = $0; sub(/^# openfoam /, "", version); next }
     /^#/ { next }
     {
         # most specific first: this dictionary and the full path, then this
         # dictionary and the leaf name, then any dictionary
-        r = ($1 == scope && $2 == path) ? 1 :
-            ($1 == scope && $2 == leaf) ? 2 :
-            ($1 == "*"   && $2 == path) ? 3 :
-            ($1 == "*"   && $2 == leaf) ? 4 :
-            ($2 == path)                ? 5 :
+        r = ($1 == scope && $2 == path) ? 1 : \
+            ($1 == scope && $2 == leaf) ? 2 : \
+            ($1 == "*"   && $2 == path) ? 3 : \
+            ($1 == "*"   && $2 == leaf) ? 4 : \
+            ($2 == path)                ? 5 : \
             ($2 == leaf)                ? 6 : 0
         # <= keeps the last of equally good matches, and the curated entries are
         # appended last, so a hand-written record beats an extracted one
@@ -393,7 +399,7 @@ HELP
 # trailing "." so that the next TAB steps inside it. Dots within a quoted name
 # are not separators.
 _dictator_level() {
-    listDictEntries "$1" 2>/dev/null | awk -v cur="$2" '
+    listDictEntries "$1" 2>/dev/null | cur="$2" awk '
         function nextDot(t, from,   i, q, ch) {
             q = ""
             for (i = from; i <= length(t); i++) {
@@ -405,16 +411,19 @@ _dictator_level() {
             return 0
         }
         BEGIN {
+            cur = ENVIRON["cur"]
             last = 0; p = 1
             while ((d = nextDot(cur, p)) > 0) { last = d; p = d + 1 }
             base = last ? substr(cur, 1, last) : ""
             bl = length(base)
         }
-        index($0, base) == 1 {
+        # not index($0, base) == 1: busybox awk returns 0 for index(s, "") so an
+        # empty base (the top level) would match nothing
+        substr($0, 1, bl) == base {
             rest = substr($0, bl + 1)
             d = nextDot(rest, 1)
             cand = base (d ? substr(rest, 1, d) : rest)
-            if (index(cand, cur) == 1 && !(cand in seen)) { seen[cand] = 1; print cand }
+            if (substr(cand, 1, length(cur)) == cur && !(cand in seen)) { seen[cand] = 1; print cand }
         }'
 }
 
@@ -485,7 +494,11 @@ _dictator_complete() {
             exp=$(_dictator_expand "$cur")
             if [[ $exp == "$cur" ]]; then
                 compopt -o filenames 2>/dev/null
-                COMPREPLY=( $(compgen -f -- "$cur") )
+                # read, not $(...), so a path holding a space or glob character is
+                # kept as one entry rather than split or expanded
+                while IFS= read -r m; do
+                    [[ -n $m ]] && COMPREPLY+=( "$m" )
+                done < <(compgen -f -- "$cur")
             else
                 # Match on the expanded path but put the unexpanded prefix back, so
                 # the short $FOAM_TUTORIALS/... form stays on the command line. That
