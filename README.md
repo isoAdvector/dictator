@@ -148,6 +148,26 @@ dialect is six tokens, so another brace-and-terminator format is a one-line
 addition; formats that express nesting through indentation, such as YAML, do not
 fit this model.
 
+## Tests
+
+```sh
+./test/run_tests.sh
+```
+
+Sources `dictator` and exercises every entry point and helper against a torture
+fixture in `test/fixtures/`: packed and split entries, list values, nested
+parentheses, empty values, duplicated keys, deep and quoted sub-dictionaries,
+comments and `#include` lines, `-add` placement, formatting preservation,
+error paths and exit codes, and the completion function at each argument. Each
+check prints `ok` or `FAIL`, with a summary and a non-zero exit on any failure.
+
+`dictator` shells out to `awk`, and the dialects disagree in ways that have bitten
+it before, so the whole suite is re-run once per `awk` found on the machine — the
+ambient one plus `gawk`, `mawk`, `busybox awk` and `original-awk` when present. A
+green run means they all agree. `QUIET=1` hides the passing lines;
+`DICTATOR_TEST_AWKS="default gawk"` restricts which are tried. See
+[test/README.md](test/README.md).
+
 ## See also
 
 [cfdTools](https://github.com/isoAdvector/cfdTools) — `parmScanner`, which builds

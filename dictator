@@ -478,7 +478,12 @@ _dictator_complete() {
     COMPREPLY=()
 
     case $(( ${#args[@]} - 1 )) in
-        1)  # A dictionary file. -o filenames appends "/" after a directory so the
+        1)  # A leading dash here asks for the command's own help, "dictator -help".
+            if [[ $raw == -* ]]; then
+                COMPREPLY=( $(compgen -W '-help' -- "$raw") )
+                return
+            fi
+            # A dictionary file. -o filenames appends "/" after a directory so the
             # path can be typed on, and a space after a file so TAB moves on.
             local exp v m pre epre
             # A "$" with no "/" yet is a variable name being typed. Complete it as

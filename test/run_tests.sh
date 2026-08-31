@@ -263,6 +263,11 @@ run_suite() {
     reply_suffix "completes a partial filename" "/system/testDict"
     complete_at 'dictator $HO'
     in_reply "completes an env-var prefix" '$HOME/'
+    complete_at "dictator -hel"
+    in_reply "-hel completes to -help" "-help"
+    eq "only -help is offered at arg 1" 1 "${#COMPREPLY[@]}"
+    complete_at "dictator -"
+    in_reply "a bare dash offers -help" "-help"
 
     section "_dictator_complete - argument 2, the parameter"
     f="$C/system/testDict"
