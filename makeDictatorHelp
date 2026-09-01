@@ -32,6 +32,10 @@
 # several places with different types or defaults reports the most common and marks
 # the field "(varies)", since claiming one of them would be misleading.
 #
+# Two hand-written siblings are not generated here: dictatorHelp.curated (extra
+# per-keyword records, appended to the output below) and dictatorHelp.files
+# (whole-dictionary descriptions for "dictator <file> -help").
+#
 # Copyright (C) 2026 Johan Roenby, STROMNING
 #
 # This program is free software: you can redistribute it and/or modify it under

@@ -5773,3 +5773,36 @@ fvSchemes	divSchemes.default	word	required		none;Gauss linear;Gauss upwind;Gauss
 fvSchemes	laplacianSchemes.default	word	required		Gauss linear corrected;Gauss linear limited corrected 0.33;Gauss linear orthogonal	Laplacian scheme. The trailing word sets the non-orthogonal correction; corrected suits a good mesh, limited a poor one.	curated
 fvSchemes	interpolationSchemes.default	word	required		linear;cubic;midPoint	Cell-to-face interpolation.	curated
 fvSchemes	snGradSchemes.default	word	required		corrected;limited corrected 0.33;orthogonal;uncorrected	Surface-normal gradient, with the same non-orthogonality trade-off as the Laplacian schemes.	curated
+fvSolution	PIMPLE.nOuterCorrectors	label	optional	1		Outer PIMPLE iterations per time step. 1 makes PIMPLE behave as PISO; more lets you take a larger time step at the cost of work per outer iteration.	curated
+fvSolution	PIMPLE.nCorrectors	label	optional	1		Pressure-correction (PISO) solves per outer iteration.	curated
+fvSolution	PIMPLE.nNonOrthogonalCorrectors	label	optional	0		Extra pressure solves per corrector that correct for mesh non-orthogonality.	curated
+fvSolution	PIMPLE.momentumPredictor	Switch	optional	true		Whether the momentum equation is solved before the first pressure correction. Often turned off for interface-dominated or creeping flows.	curated
+fvSolution	PIMPLE.consistent	Switch	optional	false		Use the SIMPLEC-consistent formulation, which tolerates relaxation factors close to 1.	curated
+fvSolution	PIMPLE.transonic	Switch	optional	false		Use the transonic form of the pressure equation, for the compressible solvers that support it.	curated
+fvSolution	PIMPLE.turbOnFinalIterOnly	Switch	optional	true		Solve the turbulence equations only on the final outer iteration.	curated
+fvSolution	PIMPLE.finalOnLastPimpleIterOnly	Switch	optional	false		Apply the "final" relaxation factors and linear-solver settings only on the last outer iteration rather than as soon as the residual controls are met.	curated
+fvSolution	PIMPLE.ddtCorr	Switch	optional	true		Include the face-flux time-derivative correction in the pressure equation.	curated
+fvSolution	PIMPLE.solveFlow	Switch	optional	true		Solve the flow. Set false to advance only the other equations on a frozen velocity and flux field.	curated
+fvSolution	PIMPLE.SIMPLErho	Switch	optional	false		Update the density with the SIMPLE rather than the PIMPLE rule in compressible runs.	curated
+fvSolution	PIMPLE.frozenFlow	Switch	optional	false		Skip the flow solution entirely, advancing only the remaining equations.	curated
+fvSolution	PIMPLE.residualControl	dictionary	optional			Per-field convergence targets for the outer loop, as "field { tolerance <abs>; relTol <rel>; }". When every named field is within tolerance the outer loop ends early.	curated
+fvSolution	SIMPLE.nNonOrthogonalCorrectors	label	optional	0		Extra pressure solves per step that correct for mesh non-orthogonality.	curated
+fvSolution	SIMPLE.momentumPredictor	Switch	optional	true		Whether the momentum equation is solved before the pressure correction.	curated
+fvSolution	SIMPLE.consistent	Switch	optional	false		Use SIMPLEC rather than SIMPLE. SIMPLEC tolerates relaxation factors close to 1 and usually needs fewer iterations.	curated
+fvSolution	SIMPLE.transonic	Switch	optional	false		Use the transonic form of the pressure equation, for the compressible steady solvers that support it.	curated
+fvSolution	SIMPLE.frozenFlow	Switch	optional	false		Skip the flow solution, advancing only other equations such as turbulence or energy.	curated
+fvSolution	SIMPLE.residualControl	dictionary	optional			Initial-residual levels at which the steady run is converged and stops, one scalar per field, as "p 1e-3; U 1e-4;".	curated
+fvSolution	PISO.nCorrectors	label	optional	1		Pressure-correction solves per time step.	curated
+fvSolution	PISO.nNonOrthogonalCorrectors	label	optional	0		Extra pressure solves per corrector that correct for mesh non-orthogonality.	curated
+fvSolution	PISO.momentumPredictor	Switch	optional	true		Whether the momentum equation is solved before the first pressure correction.	curated
+fvSolution	PISO.transonic	Switch	optional	false		Use the transonic form of the pressure equation, for the compressible solvers that support it.	curated
+fvSolution	PISO.consistent	Switch	optional	false		Consistent (SIMPLEC-style) formulation. Rarely used with PISO.	curated
+fvSolution	PIMPLE.pRefCell	label	optional			Cell whose pressure is pinned when no boundary sets the pressure level. The keyword follows the field name, so a VoF solver wants p_rghRefCell. Supply this or pRefPoint.	curated
+fvSolution	PIMPLE.pRefValue	scalar	optional			Pressure imposed at pRefCell or pRefPoint. The keyword follows the field name, so a VoF solver wants p_rghRefValue.	curated
+fvSolution	PIMPLE.pRefPoint	vector	optional			Point whose nearest cell has its pressure pinned, field-name prefixed like pRefCell. An alternative to pRefCell.	curated
+fvSolution	SIMPLE.pRefCell	label	optional			Cell whose pressure is pinned when no boundary sets the pressure level. The keyword follows the field name. Supply this or pRefPoint.	curated
+fvSolution	SIMPLE.pRefValue	scalar	optional			Pressure imposed at pRefCell or pRefPoint. The keyword follows the field name.	curated
+fvSolution	SIMPLE.pRefPoint	vector	optional			Point whose nearest cell has its pressure pinned, field-name prefixed like pRefCell. An alternative to pRefCell.	curated
+fvSolution	PISO.pRefCell	label	optional			Cell whose pressure is pinned when no boundary sets the pressure level. The keyword follows the field name. Supply this or pRefPoint.	curated
+fvSolution	PISO.pRefValue	scalar	optional			Pressure imposed at pRefCell or pRefPoint. The keyword follows the field name.	curated
+fvSolution	PISO.pRefPoint	vector	optional			Point whose nearest cell has its pressure pinned, field-name prefixed like pRefCell. An alternative to pRefCell.	curated

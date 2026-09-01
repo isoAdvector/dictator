@@ -51,7 +51,10 @@ DICTATOR_TEST_AWKS="default gawk" ./test/run_tests.sh
   key, line/block comments and `#include` directives.
 - `fixtures/system/controlDict` — a small real `controlDict` so the
   `-help` lookup has a `FoamFile.object` scope to resolve against the
-  parameter database.
+  parameter database, and for `dictator <file> -help`.
+- `fixtures/system/fvSolution` — a `PIMPLE` block with some keys set and
+  one bogus key, for the standard-key table
+  (`dictator system/fvSolution PIMPLE -help`).
 
 The fixtures are copied to a scratch directory per run; the originals are
 never modified.

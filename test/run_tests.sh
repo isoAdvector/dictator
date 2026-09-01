@@ -63,7 +63,8 @@ run() { OUT="$("$@" 2>"$WORK/err")"; RC=$?; ERR="$(cat "$WORK/err")"; }
 # a clean copy of the fixtures; echoes the case directory
 fresh() {
     rm -rf "$WORK/case"; mkdir -p "$WORK/case/system"
-    cp "$FIX/system/testDict" "$FIX/system/controlDict" "$WORK/case/system/" || exit 2
+    cp "$FIX/system/testDict" "$FIX/system/controlDict" "$FIX/system/fvSolution" \
+       "$WORK/case/system/" || exit 2
     printf '%s' "$WORK/case"
 }
 
@@ -249,6 +250,42 @@ run_suite() {
     contains "options are rendered" "$OUT" "options: firstTime"
     run dictator "$f" totallyMadeUpKey -help ; rc_is "unknown key rc" 0 "$RC"
     contains "unknown key: says so" "$OUT" "No information"
+
+    section "dictator <file> <subDict> -help  (standard-key table)"
+    C="$(fresh)"; f="$C/system/fvSolution"
+    run dictator "$f" PIMPLE -help ; rc_is "PIMPLE -help rc" 0 "$RC"
+    contains "keeps the single-entry header"  "$OUT" "dictionary, optional   [fvSolution, curated,"
+    contains "PIMPLE description"             "$OUT" "Controls for the PIMPLE pressure-velocity loop"
+    contains "opens the key table"            "$OUT" "standard keys:"
+    contains "documented key, value from file" "$OUT" "nOuterCorrectors  =  3"
+    contains "value read even when non-default" "$OUT" "momentumPredictor  =  no"
+    contains "undocumented-in-file key marked" "$OUT" "turbOnFinalIterOnly   (not set)"
+    contains "each key carries its meaning"    "$OUT" "Pressure-correction (PISO) solves per outer iteration."
+    contains "each key carries type + default" "$OUT" "label, optional, default 1"
+    contains "flags keys not in the database"  "$OUT" "also set here, not in the database: turbulentPotato"
+    not_contains "residualControl is documented, not flagged as extra" "$OUT" "database: turbulentPotato, residualControl"
+    run dictator "$f" PIMPLE.nCorrectors -help ; rc_is "nested key still single-entry rc" 0 "$RC"
+    contains "nested key resolves to its own record" "$OUT" "PIMPLE.nCorrectors  =  2"
+    not_contains "nested key does not open a table" "$OUT" "standard keys:"
+    run dictator "$f" nCorrectors -help ; rc_is "bare leaf still works rc" 0 "$RC"
+    not_contains "bare leaf is not treated as a sub-dict" "$OUT" "standard keys:"
+    run dictator "$f" SIMPLE -help ; rc_is "SIMPLE -help rc" 0 "$RC"
+    contains "SIMPLE table lists its keys" "$OUT" "consistent   (not set)"
+
+    section "dictator <file> -help  (whole-dictionary description)"
+    C="$(fresh)"
+    run dictator "$C/system/controlDict" -help ; rc_is "file -help rc" 0 "$RC"
+    contains "names the dictionary"      "$OUT" "controlDict"
+    contains "describes its purpose"     "$OUT" "Run control for a case"
+    contains "shows an example"          "$OUT" "example:"
+    contains "example is real content"   "$OUT" "writeControl"
+    run dictator "$C/system/fvSolution" -help ; rc_is "fvSolution file -help rc" 0 "$RC"
+    contains "fvSolution purpose"        "$OUT" "How the equations are solved"
+    contains "fvSolution example"        "$OUT" "PIMPLE"
+    run dictator "$C/system/testDict" -help ; rc_is "undocumented file -help rc" 0 "$RC"
+    contains "undocumented dictionary says so" "$OUT" "No file-level description for testDict"
+    complete_at "dictator $C/system/controlDict -he"
+    in_reply "-he completes to -help at arg 2" "-help"
 
     section "_dictator_expand - variable and tilde expansion"
     eq "\$VAR/x"     "$HOME/x"  "$(_dictator_expand '$HOME/x')"

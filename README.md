@@ -103,9 +103,73 @@ The bracket names the dictionary the description was found in, where it came
 from, and the OpenFOAM release it describes, so an answer taken from a different
 dictionary is visible as such.
 
+### The whole dictionary
+
+`-help` with no parameter describes the file itself: what the dictionary is for
+and a minimal example.
+
+```
+$ dictator system/decomposeParDict -help
+decomposeParDict
+  How decomposePar splits the mesh for a parallel run: the number of
+  subdomains (one per MPI rank) and the partitioning method. scotch and kahip
+  need no further input; simple and hierarchical take an n (x y z) split;
+  manual reads a per-cell decomposition from a file.
+
+  example:
+    numberOfSubdomains  8;
+
+    method              scotch;
+```
+
+The core system and constant dictionaries are covered (`controlDict`,
+`fvSolution`, `fvSchemes`, `decomposeParDict`, `blockMeshDict`,
+`snappyHexMeshDict`, `setFieldsDict`, `transportProperties`,
+`turbulenceProperties`, `g`). The text is hand-written, one block per FoamFile
+object, in `dictatorHelp.files` beside the script; add more there.
+
+### Standard sub-dictionaries
+
+The listing shows the parameters already in a file. To see every standard key a
+known sub-dictionary accepts, ask for `-help` on the sub-dictionary itself. The
+single-entry answer is followed by a table: each key's current value in the
+file, or `(not set)`, its type and default, and what it does. Keys present in
+the file that the database does not know are listed at the end, which catches a
+misspelt one.
+
+```
+$ dictator system/fvSolution PIMPLE -help
+PIMPLE
+  dictionary, optional   [fvSolution, curated, v2506]
+  Controls for the PIMPLE pressure-velocity loop used by transient solvers.
+
+  standard keys:
+
+  nOuterCorrectors  =  3
+    label, optional, default 1
+    Outer PIMPLE iterations per time step. 1 makes PIMPLE behave as PISO; more
+    lets you take a larger time step at the cost of work per outer iteration.
+
+  momentumPredictor  =  no
+    Switch, optional, default true
+    Whether the momentum equation is solved before the first pressure
+    correction. Often turned off for interface-dominated or creeping flows.
+
+  nCorrectors   (not set)
+    label, optional, default 1
+    Pressure-correction (PISO) solves per outer iteration.
+  ...
+
+  also set here, not in the database: turbulentPotato
+```
+
+`PIMPLE`, `SIMPLE` and `PISO` in `fvSolution`, and the scheme sub-dictionaries in
+`fvSchemes`, are covered. These lists are hand-curated from the OpenFOAM
+sources; add more as `SubDict.key` records in `dictatorHelp.curated`.
+
 ### Where the text comes from
 
-The 5769 records in `dictatorHelp` are generated from an OpenFOAM source tree by
+The 5802 records in `dictatorHelp` are generated from an OpenFOAM source tree by
 
 ```sh
 makeDictatorHelp [openfoamRoot] > dictatorHelp

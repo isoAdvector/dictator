@@ -282,6 +282,12 @@ setDictEntry() (
 # which is authoritative and survives renaming: controlDict.run still resolves
 # to controlDict. Matches from another dictionary are still shown, since they
 # are usually right, but the scope is printed so a mismatch is visible.
+#
+# When the parameter names a dictionary the database describes the contents of,
+# such as PIMPLE in fvSolution, the single-entry answer is followed by a table
+# of that dictionary's standard keys: each key's current value in the file, its
+# type and default, and what it does. Those keys are stored as curated records
+# whose path is "SubDict.key" (like the existing fvSchemes ddtSchemes.default).
 _dictHelp() (
     file=$1
     parm=$2
@@ -294,6 +300,31 @@ _dictHelp() (
 
     scope=$(getDictEntry "$file" FoamFile.object 2>/dev/null)
     [ -n "$scope" ] || { scope=${file##*/}; scope=${scope%%.*}; }
+
+    _dictHelpEntry "$file" "$parm" "$scope" "$db"
+
+    # Direct children the database documents for <parm>, in database order. If
+    # there are any, <parm> is a known sub-dictionary and its keys are tabled.
+    members=$(parm="$parm" awk -F'\t' -v scope="$scope" '
+        /^#/ { next }
+        ($1 == scope || $1 == "*") {
+            pre = ENVIRON["parm"] "."
+            if (substr($2, 1, length(pre)) == pre) {
+                leaf = substr($2, length(pre) + 1)
+                if (leaf != "" && index(leaf, ".") == 0 && !seen[leaf]++) print leaf
+            }
+        }
+    ' "$db")
+    [ -n "$members" ] && _dictHelpMembers "$file" "$parm" "$scope" "$db" "$members"
+    return 0
+)
+
+# The single-entry answer: what the database says about one keyword.
+_dictHelpEntry() (
+    file=$1
+    parm=$2
+    scope=$3
+    db=$4
     value=$(getDictEntry "$file" "$parm" 2>/dev/null)
 
     parm="$parm" value="$value" \
@@ -343,6 +374,140 @@ _dictHelp() (
     }' "$db"
 )
 
+# The table of standard keys for a known sub-dictionary. For each documented
+# key: its current value in the file (or "(not set)"), type and default, and
+# meaning. Keys present in the file that the database does not describe are
+# listed at the end, which is what catches a misspelt key.
+_dictHelpMembers() (
+    file=$1
+    parm=$2
+    scope=$3
+    db=$4
+    members=$5
+
+    {
+        printf '%s\n' "$members" | while IFS= read -r c; do
+            [ -n "$c" ] || continue
+            if v=$(getDictEntry "$file" "$parm.$c" 2>/dev/null); then
+                printf 'M\t%s\tset\t%s\n' "$c" "$v"
+            else
+                printf 'M\t%s\tunset\t\n' "$c"
+            fi
+        done
+        _dictator_level "$file" "$parm." 2>/dev/null | while IFS= read -r e; do
+            e=${e#"$parm."}; e=${e%.}
+            [ -n "$e" ] && printf 'P\t%s\n' "$e"
+        done
+    } | parm="$parm" scope="$scope" awk -F'\t' -v width=78 '
+    function wrap(text, indent,   n, i, line, out) {
+        n = split(text, w, / +/)
+        line = indent; out = ""
+        for (i = 1; i <= n; i++) {
+            if (length(line) + length(w[i]) + 1 > width && line != indent) {
+                out = out line "\n"; line = indent
+            }
+            line = line (line == indent ? "" : " ") w[i]
+        }
+        return out line
+    }
+    BEGIN { parm = ENVIRON["parm"]; scope = ENVIRON["scope"] }
+    FNR == NR {
+        if ($1 == "M") { order[++nm] = $2; isset[$2] = $3; cur[$2] = $4; known[$2] = 1 }
+        else if ($1 == "P") { present[++np] = $2 }
+        next
+    }
+    /^# openfoam / { version = $0; sub(/^# openfoam /, "", version); next }
+    /^#/ { next }
+    ($1 == scope || $1 == "*") {
+        pre = parm "."
+        if (substr($2, 1, length(pre)) == pre) {
+            leaf = substr($2, length(pre) + 1)
+            if (index(leaf, ".") == 0 && !rowseen[leaf]++) row[leaf] = $0
+        }
+    }
+    END {
+        print ""
+        print "  standard keys:"
+        for (i = 1; i <= nm; i++) {
+            name = order[i]; split(row[name], f, "\t")
+            printf "\n  %s", name
+            if (isset[name] == "set") printf "  =  %s", cur[name]
+            else printf "   (not set)"
+            printf "\n"
+            attr = f[3]
+            if (f[4] != "") attr = attr (attr == "" ? "" : ", ") f[4]
+            if (f[5] != "") attr = attr (attr == "" ? "" : ", ") "default " f[5]
+            # provenance only when the description was borrowed from another scope
+            prov = (f[1] != "" && f[1] != scope) ? "   [" f[1] ", " f[8] "]" : ""
+            if (attr != "") print "    " attr prov
+            if (f[7] != "") print wrap(f[7], "    ")
+            if (f[6] != "") { o = f[6]; gsub(/;/, " | ", o); print wrap("options: " o, "    ") }
+        }
+        extra = ""
+        for (i = 1; i <= np; i++)
+            if (!known[present[i]]) extra = extra (extra == "" ? "" : ", ") present[i]
+        if (extra != "") { print ""; print wrap("also set here, not in the database: " extra, "  ") }
+    }' - "$db"
+)
+
+# Describe a whole dictionary: what it is for, and a minimal example. The text
+# is hand-written, one block per FoamFile object, in dictatorHelp.files beside
+# the script. The object is taken from the FoamFile header, or the file name.
+_dictFileHelp() (
+    file=$1
+    db=$_DICTATOR_DIR/dictatorHelp.files
+
+    object=$(getDictEntry "$file" FoamFile.object 2>/dev/null)
+    [ -n "$object" ] || { object=${file##*/}; object=${object%%.*}; }
+
+    if [ ! -f "$db" ]; then
+        echo "$object"
+        echo "  No file descriptions installed at $db" >&2
+        return 1
+    fi
+
+    object="$object" awk -v width=78 '
+    function wrap(text, indent,   n, i, line, out) {
+        n = split(text, w, / +/)
+        line = indent; out = ""
+        for (i = 1; i <= n; i++) {
+            if (length(line) + length(w[i]) + 1 > width && line != indent) {
+                out = out line "\n"; line = indent
+            }
+            line = line (line == indent ? "" : " ") w[i]
+        }
+        return out line
+    }
+    BEGIN { want = ENVIRON["object"] }
+    /^#/ { next }
+    /^@[ \t]/ {
+        if (done) next
+        nm = $0; sub(/^@[ \t]+/, "", nm); sub(/[ \t]+$/, "", nm)
+        if (found && nm != want) { done = 1; next }
+        if (nm == want) { found = 1; sec = "purpose" }
+        next
+    }
+    (done || !found) { next }
+    (sec == "purpose" && $0 == ".example") { sec = "example"; next }
+    (sec == "purpose") { if ($0 !~ /^[ \t]*$/) pbuf = (pbuf == "" ? $0 : pbuf " " $0); next }
+    (sec == "example") { ex[++en] = $0 }
+    END {
+        if (!found) {
+            print want
+            print wrap("No file-level description for " want ". Use \"dictator <file> <parameter> -help\" for one keyword, or \"dictator <file>\" with TAB to list what is set.", "  ")
+            exit 0
+        }
+        print want
+        if (pbuf != "") print wrap(pbuf, "  ")
+        while (en > 0 && ex[en] ~ /^[ \t]*$/) en--          # trim trailing blanks
+        s = 1; while (s <= en && ex[s] ~ /^[ \t]*$/) s++
+        if (en >= s) {
+            print ""; print "  example:"
+            for (i = s; i <= en; i++) print (ex[i] == "" ? "" : "    " ex[i])
+        }
+    }' "$db"
+)
+
 dictator() {
     if [ "$1" = "-help" ]; then
         cat <<'HELP'
@@ -354,6 +519,7 @@ Usage: dictator <dictFile> <parameter> [<value>|-help]
     dictator sys[TAB]                            completes to system/
     dictator system/con[TAB]                     completes to system/controlDict
     dictator system/controlDict [TAB]            lists all parameters in dict
+    dictator system/controlDict -help            describes the whole dictionary
     dictator system/controlDict start[TAB]       lists e.g. startFrom, startTime
     dictator system/controlDict startTime [TAB]  displays startTime value
     dictator system/controlDict startTime 12     sets startTime to 12
@@ -379,7 +545,9 @@ HELP
         return 0
     fi
     case $# in
-        2) getDictEntry "$1" "$2" ;;
+        2) # "dictator <file> -help" describes the whole dictionary
+           if [ "$2" = "-help" ]; then _dictFileHelp "$1"; return $?; fi
+           getDictEntry "$1" "$2" ;;
         3) # tested before the set path, so a value cannot literally be -help
            if [ "$3" = "-help" ]; then _dictHelp "$1" "$2"; return $?; fi
            # -add: at the keyboard a missing parameter is usually one you want
@@ -519,7 +687,12 @@ _dictator_complete() {
                     compopt -o nospace 2>/dev/null
             fi
             ;;
-        2)  # Any parameter path in that file. A name needing quotes is shown
+        2)  # A leading dash asks for the whole-dictionary help.
+            if [[ $raw == -* ]]; then
+                COMPREPLY=( $(compgen -W '-help' -- "$raw") )
+                return
+            fi
+            # Any parameter path in that file. A name needing quotes is shown
             # quoted while the whole list is on display, which reads far better
             # than backslashes, and is escaped with %q once a partial word is
             # being extended, because readline only accepts a candidate that

@@ -1,0 +1,212 @@
+# dictator file-level help - what a whole dictionary is for, plus a minimal
+# example. One hand-written block per FoamFile "object", shown by
+#
+#     dictator <file> -help
+#
+# Format: a line "@ <object>", then a purpose paragraph (rewrapped on output),
+# then an optional ".example" line followed by verbatim example lines. A block
+# runs until the next "@" or end of file.
+
+@ controlDict
+Run control for a case: which solver executable runs, the simulated time span
+and step size, and how often, in what format and to what precision fields are
+written. With runTimeModifiable on it is re-read at the start of every time
+step, so a running case can be steered without stopping it. Function objects
+are attached here under a "functions" sub-dictionary.
+.example
+application     interIsoFoam;
+
+startTime       0;
+endTime         2;
+deltaT          0.001;
+
+writeControl    adjustableRunTime;
+writeInterval   0.05;
+
+adjustTimeStep  yes;
+maxCo           0.5;
+maxAlphaCo      0.5;
+maxDeltaT       1;
+
+@ fvSolution
+How the equations are solved: a "solvers" sub-dictionary giving the linear
+solver, preconditioner and tolerances for each field, and a pressure-velocity
+control sub-dictionary - PIMPLE for transient runs, SIMPLE for steady, PISO -
+setting the corrector counts. Under-relaxation goes in "relaxationFactors".
+Each control sub-dictionary has its own "dictator <file> PIMPLE -help".
+.example
+solvers
+{
+    p_rgh
+    {
+        solver          PCG;
+        preconditioner  DIC;
+        tolerance       1e-7;
+        relTol          0.05;
+    }
+
+    "(U|k|omega|epsilon).*"
+    {
+        solver          smoothSolver;
+        smoother        symGaussSeidel;
+        tolerance       1e-6;
+        relTol          0.1;
+    }
+}
+
+PIMPLE
+{
+    nOuterCorrectors            1;
+    nCorrectors                 3;
+    nNonOrthogonalCorrectors    0;
+}
+
+@ fvSchemes
+The discretisation scheme for every term: the time derivative (ddtSchemes),
+gradients (gradSchemes), convection (divSchemes), diffusion (laplacianSchemes),
+cell-to-face interpolation (interpolationSchemes) and the surface-normal
+gradient (snGradSchemes). Each is a sub-dictionary with a "default" and then
+per-term overrides; "dictator <file> divSchemes -help" tables one of them.
+.example
+ddtSchemes          { default Euler; }
+gradSchemes         { default Gauss linear; }
+
+divSchemes
+{
+    default         none;
+    div(rhoPhi,U)   Gauss linearUpwind grad(U);
+    div(phi,alpha)  Gauss vanLeer;
+}
+
+laplacianSchemes    { default Gauss linear corrected; }
+interpolationSchemes { default linear; }
+snGradSchemes       { default corrected; }
+
+@ decomposeParDict
+How decomposePar splits the mesh for a parallel run: the number of subdomains
+(one per MPI rank) and the partitioning method. scotch and kahip need no
+further input; simple and hierarchical take an n (x y z) split; manual reads a
+per-cell decomposition from a file.
+.example
+numberOfSubdomains  8;
+
+method              scotch;
+
+// method           hierarchical;
+// hierarchicalCoeffs { n (4 2 1); }
+
+@ blockMeshDict
+The structured base mesh built by blockMesh: a list of vertices, one or more
+hex blocks giving the cell counts and grading along each edge, edge shapes for
+curved geometry, and the boundary patches with their type. scale multiplies
+every coordinate, so vertices can be written in millimetres.
+.example
+scale   0.001;
+
+vertices
+(
+    (0 0 0) (100 0 0) (100 100 0) (0 100 0)
+    (0 0 10) (100 0 10) (100 100 10) (0 100 10)
+);
+
+blocks
+(
+    hex (0 1 2 3 4 5 6 7) (40 40 1) simpleGrading (1 1 1)
+);
+
+boundary
+(
+    walls { type wall;  faces ( (0 3 2 1) (4 5 6 7) (0 1 5 4) (2 3 7 6) ); }
+    frontAndBack { type empty; faces ( (0 1 2 3) (4 5 6 7) ); }
+);
+
+@ snappyHexMeshDict
+Controls snappyHexMesh, which carves a body-fitted hex-dominant mesh from a
+background block mesh and one or more surfaces. It runs in three stages, each
+switched on here and configured in its own coeffs sub-dictionary:
+castellatedMeshControls (refine and remove cells), snapControls (snap points to
+the surface) and addLayersControls (grow prism layers on the walls).
+.example
+castellatedMesh true;
+snap            true;
+addLayers       false;
+
+geometry
+{
+    body.stl { type triSurfaceMesh; name body; }
+}
+
+castellatedMeshControls
+{
+    maxLocalCells       100000;
+    maxGlobalCells      2000000;
+    nCellsBetweenLevels 3;
+    refinementSurfaces  { body { level (2 3); } }
+    locationInMesh       (0.001 0.001 0.001);
+}
+
+@ setFieldsDict
+Overwrites field values in parts of an existing mesh, typically to set the
+initial state - the liquid column in a dam break, a hot patch, a marked region.
+defaultFieldValues is applied everywhere first, then each entry in "regions"
+(a topoSet selector such as boxToCell or sphereToCell) overrides its cells.
+.example
+defaultFieldValues
+(
+    volScalarFieldValue alpha.water 0
+);
+
+regions
+(
+    boxToCell
+    {
+        box (0 0 -1) (0.1461 0.292 1);
+        fieldValues ( volScalarFieldValue alpha.water 1 );
+    }
+);
+
+@ transportProperties
+Material properties for the incompressible and VoF solvers: for a single phase
+the transport model and kinematic viscosity nu; for a two-phase run the phase
+names and, in a sub-dictionary per phase, nu and density rho, plus the surface
+tension sigma between them.
+.example
+phases (water air);
+
+water
+{
+    transportModel  Newtonian;
+    nu              1e-6;
+    rho             1000;
+}
+
+air
+{
+    transportModel  Newtonian;
+    nu              1.48e-5;
+    rho             1;
+}
+
+sigma   0.07;
+
+@ turbulenceProperties
+Selects the turbulence treatment: laminar for none, RAS for a Reynolds-averaged
+model, or LES. For RAS and LES a sub-dictionary of the same name names the
+model and switches the turbulence source terms on.
+.example
+simulationType  RAS;
+
+RAS
+{
+    RASModel        kOmegaSST;
+    turbulence      on;
+    printCoeffs     on;
+}
+
+@ g
+The uniform gravitational acceleration, read by the buoyant and multiphase
+solvers. A uniformDimensionedVectorField, so it carries its dimensions and a
+constant value.
+.example
+dimensions  [0 1 -2 0 0 0 0];
+value       (0 -9.81 0);
