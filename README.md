@@ -95,8 +95,9 @@ A parameter the OpenFOAM sources never read says so, rather than guessing:
 ```
 $ dictator system/fvSchemes ponzi -help
 ponzi
-  No information. Not a keyword read anywhere in the OpenFOAM v2506 sources,
-  so probably added by you, or read by a custom solver or function object.
+  No information. Not a keyword found in the OpenFOAM v2506 reference sources,
+  so probably added by you, read by a custom solver or function object, or
+  from a release where it differs.
 ```
 
 The bracket names the dictionary the description was found in, where it came
@@ -185,11 +186,20 @@ The core entries of controlDict, fvSolution and fvSchemes, where the sources
 state a type but never say what the parameter means, are written by hand and
 marked `curated` so that distinction stays visible.
 
-**The shipped database is built from ESI OpenFOAM v2506.** The release is read
-from `META-INFO/api-info` and stamped into the file, and `dictator -help` reports
-it. If you use the OpenFOAM Foundation line, or another ESI release, some
-defaults will differ; regenerate the database against your own tree with
-`makeDictatorHelp`.
+**The shipped database describes Keysight OpenFOAM (openfoam.com) v2506**, the
+release read from `META-INFO/api-info`, stamped into the file and shown in
+every `-help` answer. The standard case dictionaries — `controlDict`,
+`fvSolution`, `fvSchemes`, `decomposeParDict` and the rest — were compared
+across the v2212, v2412, v2506 and v2512 sources: their keywords, types and
+file syntax are unchanged over that span, so the database applies as-is to
+roughly **v2206–v2606**. A few extracted defaults for niche models or function
+objects can differ between releases; regenerate against your own tree with
+`makeDictatorHelp` to be exact.
+
+The OpenFOAM Foundation line (openfoam.org, versions 11–13) has renamed and
+restructured several of these dictionaries — `transportProperties` became
+`physicalProperties`, `turbulenceProperties` became `momentumTransport`,
+`fvOptions` split into `fvModels` and `fvConstraints` — and is not covered.
 
 ## The underlying functions
 

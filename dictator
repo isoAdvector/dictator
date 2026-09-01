@@ -362,7 +362,7 @@ _dictHelpEntry() (
         if (value != "") printf "  =  %s", value
         printf "\n"
         if (best == 99) {
-            print wrap("No information. Not a keyword read anywhere in the OpenFOAM " version " sources, so probably added by you, or read by a custom solver or function object.", "  ")
+            print wrap("No information. Not a keyword found in the OpenFOAM " version " reference sources, so probably added by you, read by a custom solver or function object, or from a release where it differs.", "  ")
             exit 0
         }
         attr = f[3]
