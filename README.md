@@ -1,5 +1,7 @@
 # dictator
 
+[![tests](https://github.com/isoAdvector/dictator/actions/workflows/tests.yml/badge.svg)](https://github.com/isoAdvector/dictator/actions/workflows/tests.yml)
+
 Inspect, set and explain OpenFOAM dictionary parameters from the command line,
 with tab completion at every position.
 
