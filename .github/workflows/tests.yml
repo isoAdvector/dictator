@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  run-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # test/run_tests.sh re-runs itself once per awk it can find, so give it
+      # something to find: GNU awk, mawk, busybox awk and the one true (BWK) awk.
+      - name: Install awk implementations
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends gawk mawk busybox original-awk
+
+      - name: Versions
+        run: |
+          bash --version | head -1
+          for a in gawk mawk busybox original-awk; do
+            printf '%-14s ' "$a:"; command -v "$a" || echo '(missing)'
+          done
+
+      - name: Run test suite
+        run: bash test/run_tests.sh
