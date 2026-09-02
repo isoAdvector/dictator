@@ -8,7 +8,13 @@ if [ -z "${BASH_VERSION:-}" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
-_DICTATOR_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# The data files (dictatorHelp, dictatorHelp.curated, dictatorHelp.files) sit
+# beside this script, located via ${BASH_SOURCE[0]} - the file that was sourced,
+# not some other "dictator" on PATH. The builtin cd/pwd (which a user's cd alias
+# or function, or CDPATH, cannot redirect) turn a relative source path absolute.
+_DICTATOR_DIR=${BASH_SOURCE[0]%/*}
+[ "$_DICTATOR_DIR" = "${BASH_SOURCE[0]}" ] && _DICTATOR_DIR=.   # sourced by bare name
+_DICTATOR_DIR=$(CDPATH= builtin cd -- "$_DICTATOR_DIR" && builtin pwd)
 
 # dictator - inspect, set and explain OpenFOAM dictionary parameters, with tab
 # completion at every position. Source this file from bash; "dictator -help"
@@ -295,6 +301,8 @@ _dictHelp() (
 
     if [ ! -f "$db" ]; then
         echo "no parameter database found at $db" >&2
+        echo "  dictator was sourced from $_DICTATOR_DIR/dictator; the dictatorHelp files must sit in that directory." >&2
+        echo "  If that path is wrong, an old or duplicate \". .../dictator\" line in a shell startup file is being picked up." >&2
         return 1
     fi
 
@@ -462,7 +470,8 @@ _dictFileHelp() (
 
     if [ ! -f "$db" ]; then
         echo "$object"
-        echo "  No file descriptions installed at $db" >&2
+        echo "  no file descriptions found at $db" >&2
+        echo "  dictator was sourced from $_DICTATOR_DIR/dictator; its data files must sit in that directory." >&2
         return 1
     fi
 
@@ -542,6 +551,8 @@ HELP
         # the release is stamped into the database, so report what is installed
         sed -n 's/^# openfoam /  Parameter help generated from OpenFOAM /p' \
             "$_DICTATOR_DIR/dictatorHelp" 2>/dev/null
+        # which copy is loaded, so a stale or duplicate sourcing is obvious
+        echo "  dictator loaded from $_DICTATOR_DIR/dictator"
         return 0
     fi
     case $# in

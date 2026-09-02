@@ -20,12 +20,29 @@ full floating point precision all survive.
 
 ```sh
 git clone https://github.com/isoAdvector/dictator
-echo >> ~/.bashrc && echo ". $PWD/dictator/dictator" >> ~/.bashrc
-source ~/.bashrc
+source dictator/dictator
 ```
 
-Then open a new terminal. dictator is a bash script and must be sourced from bash;
-it refuses to load in other shells rather than misbehave quietly.
+That is the whole install: `git clone`, then `source` the script. The `source`
+lasts only for the current shell, so run it again in each new terminal — or, if
+you would rather not, add that one line to `~/.bashrc`, once, from the directory
+you cloned into:
+
+```sh
+echo ". $PWD/dictator/dictator" >> ~/.bashrc
+```
+
+Cloning again elsewhere and adding a second `.bashrc` line just leaves two copies
+of dictator, with whichever line runs last winning.
+
+Notes:
+
+- `source` needs a slash in the path (`source dictator/dictator`, or an absolute
+  path from elsewhere). A bare `source dictator` makes bash search `$PATH` and
+  may load a different file.
+- It must be sourced from **bash**; it refuses to load in other shells rather
+  than misbehave quietly.
+- The `dictatorHelp*` data files must stay in the same directory as the script.
 
 ## Tab completion
 
