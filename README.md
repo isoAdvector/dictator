@@ -185,6 +185,11 @@ PIMPLE
 `fvSchemes`, are covered. These lists are hand-curated from the OpenFOAM
 sources; add more as `SubDict.key` records in `dictatorHelp.curated`.
 
+A sub-dictionary table runs well past a screen, so on an interactive terminal
+`-help` output is sent through a pager (`less`, or `$PAGER`, or
+`$DICTATOR_PAGER`); short answers still print straight out, and
+`DICTATOR_PAGER=cat` turns paging off.
+
 ### Where the text comes from
 
 The 5802 records in `dictatorHelp` are generated from an OpenFOAM source tree by

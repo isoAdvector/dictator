@@ -287,6 +287,19 @@ run_suite() {
     complete_at "dictator $C/system/controlDict -he"
     in_reply "-he completes to -help at arg 2" "-help"
 
+    section "help paging"
+    # every -help above already runs through _dictator_page; with stdout not a
+    # terminal it must pass straight through, unpaged and unchanged
+    a=$(dictator "$C/system/fvSolution" PIMPLE -help); ra=$?
+    b=$(DICTATOR_PAGER=cat dictator "$C/system/fvSolution" PIMPLE -help); rb=$?
+    eq    "not paged when stdout is not a tty"        "$a" "$b"
+    rc_is "help exit status is 0"                     0 "$ra"
+    rc_is "DICTATOR_PAGER=cat exit status is 0"       0 "$rb"
+    contains "DICTATOR_PAGER=cat still yields the help" "$b" "standard keys:"
+    ( _DICTATOR_DIR=/dictator-no-such-dir
+      DICTATOR_PAGER=cat dictator "$C/system/controlDict" adjustTimeStep -help >/dev/null 2>&1 )
+    rc_is "a failing help still returns non-zero through the pager path" 1 "$?"
+
     section "_dictator_expand - variable and tilde expansion"
     eq "\$VAR/x"     "$HOME/x"  "$(_dictator_expand '$HOME/x')"
     eq "\${VAR}/x"   "$HOME/x"  "$(_dictator_expand '${HOME}/x')"

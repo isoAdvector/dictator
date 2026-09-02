@@ -517,10 +517,32 @@ _dictFileHelp() (
     }' "$db"
 )
 
-dictator() {
-    if [ "$1" = "-help" ]; then
-        cat <<'HELP'
-Inspect and set values in OpenFOAM dictionaries with tab auto-completion. 
+# The -help output can run well past a screen. On an interactive terminal send
+# it through a pager - less by default, or $PAGER, or $DICTATOR_PAGER; less is
+# given "quit if it fits one screen" so short answers still print straight out.
+# Set DICTATOR_PAGER=cat to switch paging off. A non-terminal stdout (a pipe,
+# a redirect, the test suite) is never paged.
+_dictator_page() {
+    local pager=${DICTATOR_PAGER:-${PAGER:-less}} rc
+    if [ ! -t 1 ] || [ "$pager" = cat ] \
+       || ! command -v "${pager%% *}" >/dev/null 2>&1
+    then
+        "$@"
+        return $?
+    fi
+    if [ "${pager%% *}" = less ]; then
+        "$@" | LESS=${LESS:-FRX} $pager
+    else
+        "$@" | $pager
+    fi
+    rc=${PIPESTATUS[0]}
+    [ "$rc" = 141 ] && rc=0        # SIGPIPE: the reader quit before we finished
+    return "$rc"
+}
+
+_dictatorUsage() {
+    cat <<'HELP'
+Inspect and set values in OpenFOAM dictionaries with tab auto-completion.
 Copyright (C) 2026 Johan Roenby, STROMNING.
 Usage: dictator <dictFile> <parameter> [<value>|-help]
 
@@ -548,19 +570,21 @@ Notes:
   quote is automatically added once the name is complete.
   The FoamFile header is left out of listings but can still be read by name.
 HELP
-        # the release is stamped into the database, so report what is installed
-        sed -n 's/^# openfoam /  Parameter help generated from OpenFOAM /p' \
-            "$_DICTATOR_DIR/dictatorHelp" 2>/dev/null
-        # which copy is loaded, so a stale or duplicate sourcing is obvious
-        echo "  dictator loaded from $_DICTATOR_DIR/dictator"
-        return 0
-    fi
+    # the release is stamped into the database, so report what is installed
+    sed -n 's/^# openfoam /  Parameter help generated from OpenFOAM /p' \
+        "$_DICTATOR_DIR/dictatorHelp" 2>/dev/null
+    # which copy is loaded, so a stale or duplicate sourcing is obvious
+    echo "  dictator loaded from $_DICTATOR_DIR/dictator"
+}
+
+dictator() {
+    if [ "$1" = "-help" ]; then _dictator_page _dictatorUsage; return $?; fi
     case $# in
         2) # "dictator <file> -help" describes the whole dictionary
-           if [ "$2" = "-help" ]; then _dictFileHelp "$1"; return $?; fi
+           if [ "$2" = "-help" ]; then _dictator_page _dictFileHelp "$1"; return $?; fi
            getDictEntry "$1" "$2" ;;
         3) # tested before the set path, so a value cannot literally be -help
-           if [ "$3" = "-help" ]; then _dictHelp "$1" "$2"; return $?; fi
+           if [ "$3" = "-help" ]; then _dictator_page _dictHelp "$1" "$2"; return $?; fi
            # -add: at the keyboard a missing parameter is usually one you want
            # created. The distinct "Added" message is what catches a typo.
            setDictEntry -add "$1" "$2" "$3"
