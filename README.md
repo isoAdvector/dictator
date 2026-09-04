@@ -55,6 +55,7 @@ dictator system/cont<TAB>                    -> system/controlDict
 dictator system/controlDict <TAB><TAB>       -> lists every parameter
 dictator system/controlDict endT<TAB>        -> endTime
 dictator system/controlDict endTime <TAB>    -> fills in the current value
+dictator system/controlDict writeControl <TAB> -> lists the standard values
 dictator system/controlDict endTime -<TAB>   -> -help
 dictator system/fvSolution solv<TAB>         -> 'solvers.
 dictator system/fvSolution 'solvers."pc<TAB> -> 'solvers."pcorr.*".
@@ -92,6 +93,49 @@ A parameter that does not exist yet is added after the last entry of the
 dictionary named in the path. The path is taken at face value, so it is your job
 to check that a new entry landed where you meant it; the `Added` versus `Set`
 message is there to make a typo obvious.
+
+### Standard values
+
+Where a keyword takes one of a fixed set of words, TAB offers that set at the
+value slot rather than the value already in the file, and completes a partial
+one. Only the set is offered, so a value in the file that is not part of it --
+the typo you are about to correct -- does not appear as though it were:
+
+```
+$ dictator system/controlDict writeControl <TAB><TAB>
+adjustable         clockTime          none               timeStep
+adjustableRunTime  cpuTime            runTime
+$ dictator system/controlDict writeControl adjust<TAB>
+$ dictator system/controlDict writeControl adjustable
+```
+
+Setting a value outside the set writes it anyway and says so. OpenFOAM
+dictionaries legitimately carry values no database knows about, so this is a
+warning rather than a refusal, and it is what catches a typo:
+
+```
+$ dictator system/controlDict writeControl runTme
+Set   writeControl = runTme in system/controlDict
+Warning: runTme is not a standard value for writeControl
+  standard: timeStep | runTime | adjustable | adjustableRunTime | clockTime | cpuTime | none
+```
+
+This covers `controlDict`'s time and write controls and `fvSolution`'s solver,
+preconditioner and agglomerator names. Only a list recorded for the dictionary
+being edited is used: `type`, `format`, `mode` and `order` all carry a list of
+their own somewhere in OpenFOAM, and completing or warning from an unrelated
+dictionary's list would be worse than staying quiet.
+
+Some lists are a sample rather than the whole space -- the `fvSchemes` defaults
+run to hundreds of valid values. Those end in `...`: TAB still offers them, and
+alongside them the value already in the file, since a sample settles nothing;
+nothing is warned against either:
+
+```
+$ dictator system/fvSchemes divSchemes.default -help
+...
+  options: none | Gauss linear | Gauss upwind | Gauss limitedLinear 1 | ...
+```
 
 ## Parameter documentation
 
@@ -209,7 +253,9 @@ extractor it came from in its last field.
 
 The core entries of controlDict, fvSolution and fvSchemes, where the sources
 state a type but never say what the parameter means, are written by hand and
-marked `curated` so that distinction stays visible.
+marked `curated` so that distinction stays visible. Their options field is what
+drives value completion and the non-standard-value warning, so a list added
+there has to be exhaustive, or end in `...` to say that it is not.
 
 **The shipped database describes Keysight OpenFOAM (openfoam.com) v2506**, the
 release read from `META-INFO/api-info`, stamped into the file and shown in

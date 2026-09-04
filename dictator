@@ -330,6 +330,60 @@ _dictHelp() (
     return 0
 )
 
+# The standard values the database records for one keyword, one per line, and
+# the marker line "..." when that list is only a sample of a larger space.
+#
+# Only a record from this file's own dictionary is used. The same leaf name
+# carries an options list in some unrelated dictionary -- "type", "format",
+# "order" and "source" all do -- and offering those, or warning against them,
+# would be worse than saying nothing. That makes this narrower than the
+# "options:" line of -help, which prints its match from anywhere and names the
+# dictionary it came from, so the reader can judge it.
+_dictator_optionsOf() (
+    file=$1
+    parm=$2
+    db=$_DICTATOR_DIR/dictatorHelp
+    [ -f "$db" ] || return 0
+
+    scope=$(getDictEntry "$file" FoamFile.object 2>/dev/null)
+    [ -n "$scope" ] || { scope=${file##*/}; scope=${scope%%.*}; }
+
+    parm="$parm" awk -F'\t' -v scope="$scope" '
+        BEGIN { path = ENVIRON["parm"]; leaf = path; sub(/^.*\./, "", leaf); best = 99 }
+        /^#/ { next }
+        $1 == scope {
+            # the full path beats the bare leaf; <= keeps the last of equally
+            # good matches, so a curated record beats an extracted one
+            r = ($2 == path) ? 1 : ($2 == leaf) ? 2 : 0
+            if (r > 0 && r <= best) { best = r; opts = $6 }
+        }
+        END {
+            n = split(opts, o, ";")
+            for (i = 1; i <= n; i++) if (o[i] != "" && !seen[o[i]]++) print o[i]
+        }' "$db"
+)
+
+
+# Warn when a value being set is not one of the standard ones. The value is
+# written either way: OpenFOAM dictionaries legitimately carry values no database
+# knows, and a warning that catches a typo is worth more than a refusal that gets
+# in the way of a real one. Silent when the list ends in "...", which marks it as
+# a sample of a larger space rather than the whole set.
+_dictator_checkValue() (
+    msg=$(_dictator_optionsOf "$1" "$2" | parm="$2" value="$3" awk '
+        $0 == "..." { sample = 1; next }
+        { n++; opts = opts (n > 1 ? " | " : "") $0
+          if ($0 == ENVIRON["value"]) ok = 1 }
+        END {
+            if (sample || ok || n == 0) exit
+            printf "Warning: %s is not a standard value for %s\n", ENVIRON["value"], ENVIRON["parm"]
+            printf "  standard: %s\n", opts
+        }')
+    [ -n "$msg" ] && printf '%s\n' "$msg" >&2
+    return 0
+)
+
+
 # The single-entry answer: what the database says about one keyword.
 _dictHelpEntry() (
     file=$1
@@ -556,6 +610,7 @@ Usage: dictator <dictFile> <parameter> [<value>|-help]
     dictator system/controlDict -help            describes the whole dictionary
     dictator system/controlDict start[TAB]       lists e.g. startFrom, startTime
     dictator system/controlDict startTime [TAB]  displays startTime value
+    dictator system/controlDict writeControl [TAB]  lists the standard values
     dictator system/controlDict startTime 12     sets startTime to 12
     dictator system/controlDict startTime -h[TAB] completes to -help
     dictator system/controlDict startTime -help  explains what startTime is
@@ -573,6 +628,9 @@ Notes:
   Names holding ( ) or * need quoting. TAB opens the quote itself as soon as the
   path leads to such a name, and closes it once the name is complete, so the
   names read as OpenFOAM writes them rather than in backslashes.
+  Keywords taking one of a fixed set of words offer that set at the value slot,
+  and setting a value outside it is written but warned about. A set printed with
+  a trailing "..." is a sample of a larger space, so nothing is warned against.
   The FoamFile header is left out of listings but can still be read by name.
 HELP
     # the release is stamped into the database, so report what is installed
@@ -597,7 +655,8 @@ dictator() {
                0) echo "Set   $2 = $3 in $1" ;;
                2) echo "Added $2 = $3 in $1" ;;
                *) return 1 ;;
-           esac ;;
+           esac
+           _dictator_checkValue "$1" "$2" "$3" ;;
         *) echo "Usage: dictator <dictFile> <parameter> [<value>|-help]" >&2; return 1 ;;
     esac
 }
@@ -792,17 +851,40 @@ _dictator_complete() {
                 COMPREPLY=( $(compgen -W '-help' -- "$raw") )
                 return
             fi
-            # Otherwise offer the parameter's current value as the starting point,
-            # shown by the same rule as the names above: quoted while it is the
-            # whole suggestion, escaped only when a partial word is being extended.
+            # Otherwise offer the standard values the database knows for this
+            # keyword. Shown by the same rule as the names above: quoted while
+            # the whole value is the suggestion, escaped only when a partial word
+            # is being extended.
             [[ -f "$file" ]] || return
-            c=$(getDictEntry "$file" "${args[2]}" 2>/dev/null) || return
-            [[ $c == "$raw"* ]] || return
-            [[ -n $inQuote || -z $cur ]] && compopt -o noquote 2>/dev/null
-            if   [[ -n $inQuote ]];                         then COMPREPLY=( "$c" )
-            elif [[ -z $cur && $c == *[^A-Za-z0-9._/-]* ]]; then COMPREPLY=( "'$c'" )
-            else                                                 COMPREPLY=( "$(printf '%q' "$c")" )
+            local -a vals=()
+            local sample=
+            while IFS= read -r c; do
+                [[ -n $c ]] || continue
+                if [[ $c == "..." ]]; then sample=1; else vals+=( "$c" ); fi
+            done < <(_dictator_optionsOf "$file" "${args[2]}")
+
+            # The value already in the file joins the list only where the
+            # standard set does not settle the matter, either because there is
+            # none or because it is marked a sample. Beside a closed set it would
+            # present whatever the file happens to hold, a typo included, as if it
+            # were standard; on its own it is the starting point for editing.
+            if [[ -n $sample || ${#vals[@]} -eq 0 ]]; then
+                c=$(getDictEntry "$file" "${args[2]}" 2>/dev/null)
+                if [[ -n $c ]]; then
+                    local seen= v
+                    for v in "${vals[@]}"; do [[ $v == "$c" ]] && seen=1; done
+                    [[ -n $seen ]] || vals+=( "$c" )
+                fi
             fi
+            (( ${#vals[@]} )) || return
+            [[ -n $inQuote || -z $cur ]] && compopt -o noquote 2>/dev/null
+            for c in "${vals[@]}"; do
+                [[ $c == "$raw"* ]] || continue
+                if   [[ -n $inQuote ]];                         then COMPREPLY+=( "$c" )
+                elif [[ -z $cur && $c == *[^A-Za-z0-9._/-]* ]]; then COMPREPLY+=( "'$c'" )
+                else                                                 COMPREPLY+=( "$(printf '%q' "$c")" )
+                fi
+            done
             ;;
     esac
 }

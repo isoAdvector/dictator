@@ -360,6 +360,60 @@ run_suite() {
     in_reply "value slot seeds the current value" "3.14159"
     complete_at "dictator $f wordEntry "
     in_reply "value slot seeds a word value" "kOmegaSST"
+
+    section "standard values - lookup"
+    C="$(fresh)"; f="$C/system/controlDict"
+    run _dictator_optionsOf "$f" writeControl
+    line_present "a closed list is found"     "$OUT" "adjustableRunTime"
+    line_absent  "a closed list has no marker" "$OUT" "..."
+    run _dictator_optionsOf "$f" deltaT
+    eq "a keyword with no standard set gives nothing" "" "$OUT"
+    # the leaf rule reaches a key nested in sub-dicts
+    run _dictator_optionsOf "$C/system/fvSolution" solvers.p_rgh.solver
+    line_present "the leaf rule finds the list" "$OUT" "PBiCGStab"
+    # "mode" and "type" carry a list in some unrelated dictionary; a record from
+    # another scope must not be borrowed, or every "type" would draw a warning
+    run _dictator_optionsOf "$f" mode
+    eq "another dictionary's list is not borrowed (mode)" "" "$OUT"
+    run _dictator_optionsOf "$f" type
+    eq "another dictionary's list is not borrowed (type)" "" "$OUT"
+
+    section "standard values - completion at the value slot"
+    complete_at "dictator $f writeControl "
+    in_reply "value slot offers a standard value" "runTime"
+    in_reply "value slot offers them all" "adjustableRunTime"
+    complete_at "dictator $f writeControl c"
+    eq "a partial value narrows the list" 2 "${#COMPREPLY[@]}"
+    in_reply "a partial value keeps the match" "clockTime"
+    complete_at "dictator $f writeControl zz"
+    eq "a value matching nothing offers nothing" 0 "${#COMPREPLY[@]}"
+    # what the file holds is not standard just because it is there: beside a
+    # closed set it would read as one of the allowed values
+    run dictator "$f" writeControl blabla
+    complete_at "dictator $f writeControl "
+    eq "a closed set offers only itself" 7 "${#COMPREPLY[@]}"
+    line_absent "the file's non-standard value is not offered" "$(printf '%s\n' "${COMPREPLY[@]}")" "blabla"
+    # a sampled list settles nothing, so the value in the file still belongs
+    run dictator "$C/system/fvSolution" smoother nonBlockingGaussSeidel
+    complete_at "dictator $C/system/fvSolution smoother "
+    in_reply "a sampled list keeps the file's value" "nonBlockingGaussSeidel"
+    reply_min "a sampled list still offers the samples" 7
+
+    section "standard values - warning on a non-standard value"
+    C="$(fresh)"; f="$C/system/controlDict"
+    run dictator "$f" writeControl runTme
+    rc_is "a non-standard value still succeeds" 0 "$RC"
+    contains "a non-standard value is still written" "$OUT" "Set   writeControl = runTme"
+    contains "the warning names the value"  "$ERR" "runTme is not a standard value for writeControl"
+    contains "the warning lists the set"    "$ERR" "timeStep | runTime | adjustable"
+    run getDictEntry "$f" writeControl ; eq "the write went through" runTme "$OUT"
+    run dictator "$f" writeControl runTime
+    eq "a standard value is silent" "" "$ERR"
+    run dictator "$f" deltaT 0.002
+    eq "a keyword with no standard set is silent" "" "$ERR"
+    # a list ending in "..." is a sample, so nothing can be judged against it
+    run dictator "$C/system/fvSolution" smoother nonBlockingGaussSeidel
+    eq "a sampled list warns about nothing" "" "$ERR"
 }
 
 # ========================================================================
