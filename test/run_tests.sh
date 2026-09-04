@@ -78,7 +78,7 @@ complete_at() {
 # the suite proper
 # ========================================================================
 run_suite() {
-    local C f list lvl d before bare
+    local C f list lvl d before bare id
     C="$(fresh)"; f="$C/system/testDict"
 
     section "sourcing"
@@ -371,6 +371,28 @@ run_suite() {
     complete_at "dictator $C/system/controlDict -he"
     in_reply "-he completes to -help at arg 2" "-help"
 
+    section "dictator -version"
+    run dictator -version ; rc_is "-version rc" 0 "$RC"
+    contains "names the commit or says there is none" "$OUT" \
+             "$(git -C "$ROOT" log -1 --format=%h 2>/dev/null || echo 'no git checkout')"
+    contains "reports where it is loaded from" "$OUT" "$ROOT"
+    id=$(_dictator_filesId)
+    contains "-version carries the files id" "$OUT" "$id"
+    contains "-help carries it too" "$(DICTATOR_PAGER=cat dictator -help)" "$id"
+
+    # the id has to cover the data files: the help text comes out of them, so a
+    # stale database must not hide behind an up-to-date script
+    cp "$ROOT/dictator" "$ROOT/dictatorHelp" "$ROOT/dictatorHelp.files" "$WORK/"
+    ( _DICTATOR_DIR="$WORK"
+      [ "$(_dictator_filesId)" = "$id" ] || exit 1
+      echo "# edit" >> "$WORK/dictatorHelp"
+      [ "$(_dictator_filesId)" != "$id" ] || exit 2 )
+    case $? in
+        0) _ok "an edited data file moves the id" ;;
+        1) _bad "an edited data file moves the id" "a copy of the files gave a different id" ;;
+        *) _bad "an edited data file moves the id" "editing dictatorHelp did not change it" ;;
+    esac
+
     section "help paging"
     # every -help above already runs through _dictator_page; with stdout not a
     # terminal it must pass straight through, unpaged and unchanged
@@ -399,9 +421,13 @@ run_suite() {
     in_reply "completes an env-var prefix" '$HOME/'
     complete_at "dictator -hel"
     in_reply "-hel completes to -help" "-help"
+    complete_at "dictator -v"
+    in_reply "-v completes to -version" "-version"
+    eq "-v completes to -version alone" 1 "${#COMPREPLY[@]}"
     eq "only -help is offered at arg 1" 1 "${#COMPREPLY[@]}"
     complete_at "dictator -"
-    in_reply "a bare dash offers -help" "-help"
+    in_reply "a bare dash offers -help"    "-help"
+    in_reply "a bare dash offers -version" "-version"
 
     section "_dictator_complete - argument 2, the parameter"
     f="$C/system/testDict"

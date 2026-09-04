@@ -326,6 +326,39 @@ dialect is six tokens, so another brace-and-terminator format is a one-line
 addition; formats that express nesting through indentation, such as YAML, do not
 fit this model.
 
+## Which revision is this
+
+```
+$ dictator -version
+dictator a3e7b8c 2026-09-04, files 1094008742-414165
+  loaded from /home/you/dictator
+  help db OpenFOAM v2506
+```
+
+Quote that when reporting anything, a complaint about `-help` content included.
+Two numbers, because a user who kept the repository and one who kept only the
+files need different answers.
+
+The commit is the checkout's `HEAD`, so a commit touching only `dictatorHelp`
+counts; it reads `no git checkout` when there is no repository to ask.
+
+`files` is a checksum of the three files dictator reads at run time -- the
+script, `dictatorHelp` and `dictatorHelp.files`. It needs no repository, it is
+the same number on every machine holding the same files, and it moves the moment
+any of them is edited locally, which is worth knowing before trusting a bug
+report. Given one, find the revision it came from:
+
+```sh
+id=1094008742-414165
+git rev-list --all | while read -r c; do
+    [ "$(git show $c:dictator $c:dictatorHelp $c:dictatorHelp.files 2>/dev/null |
+         cksum | tr ' ' -)" = "$id" ] && git log -1 --oneline "$c"
+done
+```
+
+Matching nothing means the files have been edited locally, or come from no
+commit on any branch.
+
 ## Tests
 
 ```sh
