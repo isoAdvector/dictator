@@ -56,6 +56,7 @@ dictator system/controlDict <TAB><TAB>       -> lists every parameter
 dictator system/controlDict endT<TAB>        -> endTime
 dictator system/controlDict endTime <TAB>    -> fills in the current value
 dictator system/controlDict endTime -<TAB>   -> -help
+dictator system/fvSolution solv<TAB>         -> 'solvers.
 dictator system/fvSolution 'solvers."pc<TAB> -> 'solvers."pcorr.*".
 dictator $FOAM_TUT<TAB>                      -> $FOAM_TUTORIALS/
 ```
@@ -65,8 +66,9 @@ anywhere else in bash, and keep the short `$FOAM_TUTORIALS/...` form on the
 command line rather than expanding to the full path.
 
 Sub-dictionaries keep a trailing `.` so TAB steps into them one level at a time.
-Names containing `(`, `)` or `*` need quoting: open a quote and TAB as usual, and
-the closing quote is added once the name is complete.
+Names containing `(`, `)` or `*` need quoting. TAB opens the quote itself as soon
+as the path leads to such a name, and closes it once the name is complete, so the
+names stay readable as OpenFOAM writes them instead of turning into backslashes.
 
 ## Reading and setting
 
@@ -149,7 +151,8 @@ object, in `dictatorHelp.files` beside the script; add more there.
 ### Standard sub-dictionaries
 
 The listing shows the parameters already in a file. To see every standard key a
-known sub-dictionary accepts, ask for `-help` on the sub-dictionary itself. The
+known sub-dictionary accepts, ask for `-help` on the sub-dictionary itself,
+either as `PIMPLE` or as the `PIMPLE.` that TAB leaves on the line. The
 single-entry answer is followed by a table: each key's current value in the
 file, or `(not set)`, its type and default, and what it does. Keys present in
 the file that the database does not know are listed at the end, which catches a

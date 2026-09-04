@@ -272,6 +272,14 @@ run_suite() {
     run dictator "$f" SIMPLE -help ; rc_is "SIMPLE -help rc" 0 "$RC"
     contains "SIMPLE table lists its keys" "$OUT" "consistent   (not set)"
 
+    # TAB hands over a sub-dict with its trailing ".", so -help has to accept it
+    run dictator "$f" PIMPLE -help ; bare="$OUT"
+    run dictator "$f" PIMPLE. -help ; rc_is "trailing dot -help rc" 0 "$RC"
+    eq "trailing dot reads as the dictionary itself" "$bare" "$OUT"
+    run dictator "$f" PIMPLE.residualControl -help ; bare="$OUT"
+    run dictator "$f" PIMPLE.residualControl. -help ; rc_is "nested trailing dot rc" 0 "$RC"
+    eq "trailing dot works at depth" "$bare" "$OUT"
+
     section "dictator <file> -help  (whole-dictionary description)"
     C="$(fresh)"
     run dictator "$C/system/controlDict" -help ; rc_is "file -help rc" 0 "$RC"
@@ -328,8 +336,21 @@ run_suite() {
     complete_at "dictator $f sub"
     in_reply "partial word narrows to the sub-dict" "subDict."
     complete_at "dictator $f solvers."
-    in_reply "stepping into a dict offers its children" "solvers.p."
+    in_reply "stepping into a dict offers its children" "'solvers.p."
     reply_min "stepping into a dict offers several" 3
+
+    # A partial word whose sub-tree holds a name needing quotes is completed
+    # with the quote already open, so the next TAB can list those names as
+    # OpenFOAM writes them instead of in backslashes.
+    complete_at "dictator $f solv"
+    in_reply "a quoted sub-tree opens the quote" "'solvers."
+    eq "the quote replaces the escaping" 1 "${#COMPREPLY[@]}"
+    complete_at "dictator $f sub"
+    not_contains "a clean sub-tree stays unquoted" "${COMPREPLY[*]}" "'"
+    # already on the line in the old escaped form: still rewritten to the quoted
+    # one, and a sole leaf ends the word, so the closing quote goes on too
+    complete_at 'dictator '"$f"' solvers.\"alpha.water.*\".nAlphaC'
+    in_reply "a sole leaf below a quoted name closes the quote" "'solvers.\"alpha.water.*\".nAlphaCorr'"
 
     section "_dictator_complete - argument 3, value or -help"
     complete_at "dictator $f scalarEntry -h"

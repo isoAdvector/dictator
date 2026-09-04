@@ -296,7 +296,10 @@ setDictEntry() (
 # whose path is "SubDict.key" (like the existing fvSchemes ddtSchemes.default).
 _dictHelp() (
     file=$1
-    parm=$2
+    # TAB leaves a sub-dict with its trailing ".", ready to be stepped into, so
+    # "PIMPLE. -help" is what the completion naturally produces. No entry name
+    # ends in a dot, so dropping it can only mean the dictionary itself.
+    parm=${2%.}
     db=$_DICTATOR_DIR/dictatorHelp
 
     if [ ! -f "$db" ]; then
@@ -558,16 +561,18 @@ Usage: dictator <dictFile> <parameter> [<value>|-help]
     dictator system/controlDict startTime -help  explains what startTime is
     dictator system/controlDict banana ripe      adds "banana  ripe;"
     dictator system/fvSolution PIMPLE.[TAB]      lists PIMPLE.nCorrectors, ...
+    dictator system/fvSolution PIMPLE. -help     tables PIMPLE's standard keys
     dictator constant/transportProperties [TAB]  lists phases, water., air., sigma
-    dictator system/fvSchemes 'div[TAB]          completes to 'divSchemes.
+    dictator system/fvSchemes div[TAB]           completes to 'divSchemes.
     dictator system/fvSchemes 'divSchemes.[TAB]r[TAB] -> 'divSchemes.div(rhoPhi,U)'
     dictator system/fvSolution 'solvers."pc[TAB] -> 'solvers."pcorr.*".
     dictator $FOAM_TUT[TAB]                      completes OpenFOAM's own paths
 
 Notes:
   Sub-dicts keep a trailing "." so that TAB steps into them.
-  Names holding ( ) or * need quoting. Open a quote and TAB as usual; the closing
-  quote is automatically added once the name is complete.
+  Names holding ( ) or * need quoting. TAB opens the quote itself as soon as the
+  path leads to such a name, and closes it once the name is complete, so the
+  names read as OpenFOAM writes them rather than in backslashes.
   The FoamFile header is left out of listings but can still be read by name.
 HELP
     # the release is stamped into the database, so report what is installed
@@ -628,6 +633,18 @@ _dictator_level() {
             cand = base (d ? substr(rest, 1, d) : rest)
             if (substr(cand, 1, length(cur)) == cur && !(cand in seen)) { seen[cand] = 1; print cand }
         }'
+}
+
+
+# True when any entry at or below the path prefix given carries a character that
+# has to be quoted on the command line. The prefix itself is completed inside a
+# single quote when it does, so that the names below it can be shown, and typed
+# on, as OpenFOAM writes them rather than in backslashes.
+_dictator_needsQuote() {
+    listDictEntries "$1" 2>/dev/null | cur="$2" awk '
+        BEGIN { cur = ENVIRON["cur"]; n = length(cur) }
+        substr($0, 1, n) == cur && /[^A-Za-z0-9._\/-]/ { found = 1; exit }
+        END { exit !found }'
 }
 
 
@@ -748,8 +765,21 @@ _dictator_complete() {
                 while IFS= read -r c; do lvl+=( "$c" ); done < <(_dictator_level "$file" "${lvl[0]}")
             fi
 
+            # Opening a quote here, rather than escaping, is what keeps the next
+            # TAB readable: once the word is quoted the names below are offered
+            # verbatim. The quote goes in front of the whole word, which readline
+            # replaces anyway, as soon as anything below the word needs it.
+            local open=
+            [[ -z $inQuote && -n $cur ]] && _dictator_needsQuote "$file" "$cur" && open=1
+            [[ -n $open ]] && compopt -o noquote 2>/dev/null
+
             for c in "${lvl[@]}"; do
                 if   [[ -n $inQuote ]];                            then COMPREPLY+=( "$c" )
+                # A sole leaf ends the word, so it also gets the closing quote;
+                # after a sub-dict, or while the list is still ambiguous, the
+                # quote stays open for the next TAB.
+                elif [[ -n $open && ${#lvl[@]} -eq 1 && $c != *. ]]; then COMPREPLY+=( "'$c'" )
+                elif [[ -n $open ]];                               then COMPREPLY+=( "'$c" )
                 elif [[ -z $cur && $c == *[^A-Za-z0-9._/-]* ]];    then COMPREPLY+=( "'$c'" )
                 else                                                    COMPREPLY+=( "$(printf '%q' "$c")" )
                 fi
