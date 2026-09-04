@@ -23,6 +23,7 @@ _DICTATOR_DIR=$(CDPATH= builtin cd -- "$_DICTATOR_DIR" && builtin pwd)
 #   dictator          inspect, set and explain dictionary parameters
 #   setDictEntry      set the value of one dictionary entry
 #   getDictEntry      print the value of one dictionary entry
+#   deleteDictEntry   remove one dictionary entry
 #   listDictEntries   print every entry path in a dictionary file
 #
 # The parameter documentation printed by "dictator <file> <parameter> -help"
@@ -45,10 +46,11 @@ _DICTATOR_DIR=$(CDPATH= builtin cd -- "$_DICTATOR_DIR" && builtin pwd)
 #
 
 # Scan a dictionary file and, depending on mode, print every entry path (list),
-# print one entry's value (get), or print the whole file with one value replaced
-# (set, with the new value in $newValue).
+# print one entry's value (get), print the whole file with one value replaced
+# (set, with the new value in $newValue), or print it with one entry removed
+# (delete).
 #
-#   _dictScan <list|get|set> <file> [entry.path] [add]
+#   _dictScan <list|get|set|delete> <file> [entry.path] [add]
 #
 # Entries are addressed by their full path from the top of the file, with sub-dicts
 # separated by ".", e.g. "nz", "PIMPLE.nCorrectors", "solvers.p_rgh.tolerance".
@@ -130,6 +132,7 @@ _dictScan() (
                 i++                                               # it is all value
             } else if (c == dopen) {                              # sub-dict opens
                 path[++depth] = nTok ? substr(s, kS, kE - kS + 1) : ""; nTok = 0; i++
+                isDict[pathTo(depth)] = 1     # so delete can say what it refused
             } else if (c == dclose) {                             # sub-dict closes
                 if (depth) {
                     delete path[depth--]
@@ -158,7 +161,8 @@ _dictScan() (
                     # The FoamFile header is noise when browsing, so it is left out
                     # of listings; it can still be read and set by naming it
                     if (mode == "list" && substr(full, 1, 9) != "FoamFile.") print full
-                    if (full == target) { matches++; vS = kE + 1; vE = i - 1 }
+                    if (full == target) { matches++; vS = kE + 1; vE = i - 1
+                                          dS = kS; dE = i }   # key through terminator
                 }
                 nTok = 0; i++
             } else {                                              # ordinary token
@@ -209,6 +213,14 @@ _dictScan() (
             exit 2                                        # 2 = added rather than replaced
         }
 
+        # Deleting a whole sub-dictionary would take an unknown amount of the
+        # file with it, so it is refused by name rather than reported as missing.
+        if (mode == "delete" && (target in isDict)) {
+            printf "\"%s\" is a sub-dictionary, not an entry - only entries can be deleted\n",
+                   target > "/dev/stderr"
+            exit 1
+        }
+
         if (matches != 1) {
             printf "\"%s\" %s\n", target,
                    matches ? "matched " matches " times - refusing to guess" : "not found" > "/dev/stderr"
@@ -217,6 +229,25 @@ _dictScan() (
         while (substr(s, vS, 1) ~ /[ \t\r\n]/) vS++        # keep the spacing around the value
         while (substr(s, vE, 1) ~ /[ \t\r\n]/) vE--
         if (mode == "get") { print substr(s, vS, vE - vS + 1); exit 0 }
+
+        # An entry that has its line to itself takes the whole line with it,
+        # including the comment trailing it, which explains the entry being
+        # removed. One packed onto a line beside others takes only itself, and
+        # the space that separated it from what follows.
+        if (mode == "delete") {
+            a = dS; b = dE
+            ls = a; while (ls > 1 && substr(s, ls - 1, 1) ~ /[ \t]/) ls--
+            q = b + 1; while (q <= n && substr(s, q, 1) ~ /[ \t\r]/) q++
+            cmt = (substr(s, q, lc) == lcom)
+            if (cmt) while (q <= n && substr(s, q, 1) != "\n") q++
+            if ((ls == 1 || substr(s, ls - 1, 1) == "\n") && substr(s, q, 1) == "\n") {
+                a = ls; b = q
+            } else if (!cmt && substr(s, b + 1, 1) == " ") {
+                b = b + 1
+            }
+            printf "%s%s", substr(s, 1, a - 1), substr(s, b + 1)
+            exit 0
+        }
         # An entry may have no value at all, as fluxRequired entries do, so a new
         # value needs a separator, and clearing one must take the separator with it
         e = vS - 1
@@ -275,6 +306,66 @@ setDictEntry() (
     rm -f "$tmp"
     echo "    in file: $1" >&2
     return 1
+)
+
+
+# Remove one entry, leaving the rest of the file untouched. Only an entry can be
+# removed: naming a sub-dictionary is refused rather than taking an unknown
+# amount of the file with it.
+#
+#   deleteDictEntry <file> <entry.path>
+deleteDictEntry() (
+    [ $# -eq 2 ] || { echo "Usage: deleteDictEntry <file> <entry.path>" >&2; return 1; }
+
+    tmp="$1.deleteDictEntry.$$"
+    _dictScan delete "$1" "$2" > "$tmp"
+    status=$?
+    if [ $status -eq 0 ]; then
+        # Writing through cat rather than mv keeps the file's mode and ownership.
+        # A read-only file fails here, and that must not be reported as a success.
+        if cat "$tmp" > "$1"; then
+            rm -f "$tmp"
+            return 0
+        fi
+        echo "    could not write $1" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+    rm -f "$tmp"
+    echo "    in file: $1" >&2
+    return 1
+)
+
+
+# Quote a path or a value the way the shell needs it, so the line printed after a
+# deletion can be pasted straight back. Nothing that does not need quoting gets
+# any, which keeps the common case readable.
+_dictator_shquote() (
+    case $1 in
+        "")                 printf "''" ;;
+        *\'*)               printf '%q' "$1" ;;
+        *[!A-Za-z0-9._/-]*) printf "'%s'" "$1" ;;
+        *)                  printf '%s' "$1" ;;
+    esac
+)
+
+
+# Remove one entry and print what it held. A deletion cannot be undone from the
+# file, so the value is read first and echoed as the command that puts it back;
+# that command appends, so a restored entry lands at the end of its dictionary
+# rather than where it was.
+_dictator_delete() (
+    # TAB leaves a sub-dict with its trailing ".", as "-help" also has to allow
+    # for; dropping it here is what makes the refusal name the dictionary
+    # instead of reporting a path that does not exist.
+    set -- "$1" "${2%.}"
+    if ! value=$(getDictEntry "$1" "$2" 2>/dev/null); then
+        deleteDictEntry "$1" "$2"     # fails too, and says why: missing, ambiguous, a sub-dict
+        return 1
+    fi
+    deleteDictEntry "$1" "$2" || return 1
+    echo "Deleted $2 = $value from $1"
+    echo "  restore with: dictator $1 $(_dictator_shquote "$2") $(_dictator_shquote "$value")"
 )
 
 
@@ -601,7 +692,7 @@ _dictatorUsage() {
     cat <<'HELP'
 Inspect and set values in OpenFOAM dictionaries with tab auto-completion.
 Copyright (C) 2026 Johan Roenby, STROMNING.
-Usage: dictator <dictFile> <parameter> [<value>|-help]
+Usage: dictator <dictFile> <parameter> [<value>|-help|-delete|-rm]
 
   Examples:
     dictator sys[TAB]                            completes to system/
@@ -615,6 +706,8 @@ Usage: dictator <dictFile> <parameter> [<value>|-help]
     dictator system/controlDict startTime -h[TAB] completes to -help
     dictator system/controlDict startTime -help  explains what startTime is
     dictator system/controlDict banana ripe      adds "banana  ripe;"
+    dictator system/controlDict banana -delete   removes it again
+    dictator system/controlDict banana -rm       the same, spelled shorter
     dictator system/fvSolution PIMPLE.[TAB]      lists PIMPLE.nCorrectors, ...
     dictator system/fvSolution PIMPLE. -help     tables PIMPLE's standard keys
     dictator constant/transportProperties [TAB]  lists phases, water., air., sigma
@@ -631,6 +724,9 @@ Notes:
   Keywords taking one of a fixed set of words offer that set at the value slot,
   and setting a value outside it is written but warned about. A set printed with
   a trailing "..." is a sample of a larger space, so nothing is warned against.
+  -delete, or -rm, removes one entry and prints the command that puts it back,
+  since the file no longer holds it. A sub-dictionary cannot be deleted, only an
+  entry.
   The FoamFile header is left out of listings but can still be read by name.
 HELP
     # the release is stamped into the database, so report what is installed
@@ -648,6 +744,7 @@ dictator() {
            getDictEntry "$1" "$2" ;;
         3) # tested before the set path, so a value cannot literally be -help
            if [ "$3" = "-help" ]; then _dictator_page _dictHelp "$1" "$2"; return $?; fi
+           case "$3" in -delete|-rm) _dictator_delete "$1" "$2"; return $? ;; esac
            # -add: at the keyboard a missing parameter is usually one you want
            # created. The distinct "Added" message is what catches a typo.
            setDictEntry -add "$1" "$2" "$3"
@@ -657,7 +754,7 @@ dictator() {
                *) return 1 ;;
            esac
            _dictator_checkValue "$1" "$2" "$3" ;;
-        *) echo "Usage: dictator <dictFile> <parameter> [<value>|-help]" >&2; return 1 ;;
+        *) echo "Usage: dictator <dictFile> <parameter> [<value>|-help|-delete]" >&2; return 1 ;;
     esac
 }
 
@@ -846,9 +943,10 @@ _dictator_complete() {
             # A lone sub-dict must not get a space after it, so TAB can step inside
             [[ ${#COMPREPLY[@]} -eq 1 && ${COMPREPLY[0]} == *. ]] && compopt -o nospace 2>/dev/null
             ;;
-        3)  # A leading dash asks for the parameter documentation, not a value.
+        3)  # A leading dash asks for the parameter documentation, or its removal,
+            # rather than a value.
             if [[ $raw == -* ]]; then
-                COMPREPLY=( $(compgen -W '-help' -- "$raw") )
+                COMPREPLY=( $(compgen -W '-help -delete -rm' -- "$raw") )
                 return
             fi
             # Otherwise offer the standard values the database knows for this

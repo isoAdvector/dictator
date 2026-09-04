@@ -3,10 +3,10 @@
 # dictator test suite
 # -------------------
 # Sources ../dictator and exercises every public entry point (dictator,
-# getDictEntry, setDictEntry, listDictEntries) plus the internal helpers
-# (_dictHelp, _dictator_level, _dictator_expand, _dictator_complete) against
-# the fixtures in test/fixtures/. Each check prints "ok" or "FAIL <detail>";
-# a summary and non-zero exit follow any failure.
+# getDictEntry, setDictEntry, deleteDictEntry, listDictEntries) plus the internal
+# helpers (_dictHelp, _dictator_level, _dictator_expand, _dictator_optionsOf,
+# _dictator_complete) against the fixtures in test/fixtures/. Each check prints
+# "ok" or "FAIL <detail>"; a summary and non-zero exit follow any failure.
 #
 # The whole suite is re-run once per awk implementation found on the machine
 # (the ambient awk, plus gawk / mawk / busybox awk / original-awk if present),
@@ -78,7 +78,7 @@ complete_at() {
 # the suite proper
 # ========================================================================
 run_suite() {
-    local C f list lvl d
+    local C f list lvl d before bare
     C="$(fresh)"; f="$C/system/testDict"
 
     section "sourcing"
@@ -226,6 +226,82 @@ run_suite() {
         chmod 0644 "$f"
     fi
 
+    section "deleteDictEntry - removing one entry"
+    C="$(fresh)"; f="$C/system/testDict"
+    before=$(wc -l < "$f")
+    run deleteDictEntry "$f" scalarEntry ; rc_is "delete rc 0" 0 "$RC"
+    run getDictEntry "$f" scalarEntry ; rc_is "the entry is gone" 1 "$RC"
+    run listDictEntries "$f" ; line_absent "gone from the listing" "$OUT" "scalarEntry"
+    eq "the entry took its whole line" "$((before - 1))" "$(wc -l < "$f")"
+    run getDictEntry "$f" wordEntry ; eq "the line below is untouched" kOmegaSST "$OUT"
+
+    # a comment trailing the entry explains the entry, so it goes with it
+    run deleteDictEntry "$f" commentedValue ; rc_is "delete with trailing comment rc" 0 "$RC"
+    not_contains "the trailing comment went too" "$(cat "$f")" "the answer"
+    contains "a comment above it stayed" "$(cat "$f")" "a value carrying a trailing line comment"
+
+    # one of several entries packed onto a line takes only itself
+    run deleteDictEntry "$f" packedB ; rc_is "delete from a packed line rc" 0 "$RC"
+    contains "the packed line keeps its neighbours" "$(cat "$f")" "packedA 1; packedC 3;"
+    run getDictEntry "$f" packedC ; eq "the packed neighbour still reads" 3 "$OUT"
+
+    # entries whose text spans lines, or that have no value at all
+    run deleteDictEntry "$f" multiLineList ; rc_is "delete a multi-line value rc" 0 "$RC"
+    not_contains "the whole multi-line value went" "$(cat "$f")" "0.2"
+    run deleteDictEntry "$f" noValueEntry ; rc_is "delete an entry with no value rc" 0 "$RC"
+    run listDictEntries "$f" ; line_absent "the empty entry is gone" "$OUT" "noValueEntry"
+    run deleteDictEntry "$f" 'solvers."alpha.water.*".cAlpha' ; rc_is "delete under a quoted key rc" 0 "$RC"
+    run listDictEntries "$f" ; line_absent "the quoted-key entry is gone" "$OUT" 'solvers."alpha.water.*".cAlpha'
+    line_present "its sibling stayed" "$OUT" 'solvers."alpha.water.*".nAlphaCorr'
+
+    section "deleteDictEntry - what it refuses"
+    C="$(fresh)"; f="$C/system/testDict"
+    run deleteDictEntry "$f" subDict ; rc_is "a sub-dictionary is refused" 1 "$RC"
+    contains "and says why" "$ERR" "is a sub-dictionary, not an entry"
+    run getDictEntry "$f" subDict.alpha ; eq "the sub-dictionary is untouched" 0.5 "$OUT"
+    run deleteDictEntry "$f" dupKey ; rc_is "an ambiguous path is refused" 1 "$RC"
+    contains "ambiguity is reported" "$ERR" "matched 2 times"
+    run deleteDictEntry "$f" noSuchKey ; rc_is "a missing path is refused" 1 "$RC"
+    contains "a missing path is reported" "$ERR" "not found"
+    run deleteDictEntry "$f" ; rc_is "wrong argument count is refused" 1 "$RC"
+    contains "wrong argument count prints usage" "$ERR" "Usage: deleteDictEntry"
+
+    if [ "$(id -u)" = 0 ]; then
+        note "skipped: running as root, file mode is not enforced"
+    else
+        chmod 0444 "$f"
+        run deleteDictEntry "$f" wordEntry ; rc_is "read-only file rc 1" 1 "$RC"
+        contains "read-only file is reported" "$ERR" "could not write"
+        chmod 0644 "$f"
+        run getDictEntry "$f" wordEntry ; eq "read-only file was not changed" kOmegaSST "$OUT"
+        eq "no temporary file is left behind" "" "$(ls "$C/system" | grep deleteDictEntry)"
+    fi
+
+    section "dictator <file> <key> -delete  (and how to undo it)"
+    C="$(fresh)"; f="$C/system/testDict"
+    run dictator "$f" wordEntry -delete ; rc_is "-delete rc" 0 "$RC"
+    contains "says what it removed"   "$OUT" "Deleted wordEntry = kOmegaSST"
+    contains "prints the way back"    "$OUT" "restore with: dictator $f wordEntry kOmegaSST"
+    run getDictEntry "$f" wordEntry ; rc_is "the entry is gone" 1 "$RC"
+    # a value needing quotes is printed quoted, so the line can be pasted back
+    run dictator "$f" subDict.interp -delete
+    contains "a value holding spaces is quoted" "$OUT" "restore with: dictator $f subDict.interp 'table ( (0 1) (1 2) )'"
+    # and the line really does put it back
+    run dictator "$f" subDict.interp 'table ( (0 1) (1 2) )'
+    run getDictEntry "$f" subDict.interp ; eq "the restore line round-trips" "table ( (0 1) (1 2) )" "$OUT"
+    # TAB hands over a sub-dict with its trailing ".", so the refusal has to see through it
+    run dictator "$f" subDict. -delete ; rc_is "trailing dot on a sub-dict rc" 1 "$RC"
+    contains "trailing dot still names the dictionary" "$ERR" "\"subDict\" is a sub-dictionary"
+    run dictator "$f" noSuchKey -delete ; rc_is "-delete on a missing key rc" 1 "$RC"
+    contains "-delete on a missing key says so" "$ERR" "not found"
+    # -rm is the same thing spelled shorter
+    run dictator "$f" switchEntry -rm ; rc_is "-rm rc" 0 "$RC"
+    contains "-rm says what it removed" "$OUT" "Deleted switchEntry = yes"
+    contains "-rm prints the way back"  "$OUT" "restore with: dictator $f switchEntry yes"
+    run getDictEntry "$f" switchEntry ; rc_is "-rm removed the entry" 1 "$RC"
+    run dictator "$f" subDict -rm ; rc_is "-rm refuses a sub-dictionary" 1 "$RC"
+    contains "-rm says why" "$ERR" "is a sub-dictionary, not an entry"
+
     section "dictator - the wrapper"
     C="$(fresh)"; f="$C/system/testDict"
     run dictator "$f" scalarEntry ; rc_is "2 args -> get rc" 0 "$RC"; eq "2 args -> get value" 3.14159 "$OUT"
@@ -356,6 +432,16 @@ run_suite() {
     complete_at "dictator $f scalarEntry -h"
     in_reply "-h completes to -help" "-help"
     eq "only -help is offered" 1 "${#COMPREPLY[@]}"
+    complete_at "dictator $f scalarEntry -"
+    in_reply "a bare dash offers -help"   "-help"
+    in_reply "a bare dash offers -delete" "-delete"
+    in_reply "a bare dash offers -rm"     "-rm"
+    complete_at "dictator $f scalarEntry -d"
+    eq "-d completes to -delete alone" 1 "${#COMPREPLY[@]}"
+    in_reply "-d completes to -delete" "-delete"
+    complete_at "dictator $f scalarEntry -r"
+    eq "-r completes to -rm alone" 1 "${#COMPREPLY[@]}"
+    in_reply "-r completes to -rm" "-rm"
     complete_at "dictator $f scalarEntry "
     in_reply "value slot seeds the current value" "3.14159"
     complete_at "dictator $f wordEntry "

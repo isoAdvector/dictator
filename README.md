@@ -137,6 +137,34 @@ $ dictator system/fvSchemes divSchemes.default -help
   options: none | Gauss linear | Gauss upwind | Gauss limitedLinear 1 | ...
 ```
 
+### Deleting an entry
+
+A third argument of `-delete`, or `-rm`, removes the entry instead of setting
+it. The file no longer holds the value afterwards, so it is printed along with
+the command that puts it back:
+
+```
+$ dictator system/fvSchemes divSchemes.banana -delete
+Deleted divSchemes.banana = Gauss linear from system/fvSchemes
+  restore with: dictator system/fvSchemes divSchemes.banana 'Gauss linear'
+```
+
+The entry takes its whole line with it, including a comment trailing it, which
+is there to explain the entry being removed. One of several entries packed onto
+a single line takes only itself. Everything else in the file -- spacing,
+comments, floating point precision -- is left exactly as it was.
+
+Only an entry can be deleted. A sub-dictionary is refused, because removing one
+would take an unknown amount of the file with it:
+
+```
+$ dictator system/fvSchemes divSchemes -delete
+"divSchemes" is a sub-dictionary, not an entry - only entries can be deleted
+```
+
+The restore command appends, so an entry put back this way lands at the end of
+its dictionary rather than at the line it came from.
+
 ## Parameter documentation
 
 A third argument of `-help` explains the parameter instead of setting it: its
@@ -277,17 +305,20 @@ restructured several of these dictionaries — `transportProperties` became
 ```sh
 setDictEntry     <file> <entry.path> <value>   # set one entry
 getDictEntry     <file> <entry.path>           # print one entry's value
+deleteDictEntry  <file> <entry.path>           # remove one entry
 listDictEntries  <file>                        # print every entry path
 ```
 
-All three share one parser, which reads the dictionary as a character stream, so
+All four share one parser, which reads the dictionary as a character stream, so
 entries and sub-dictionaries may be split across lines or packed onto one,
 separated by spaces, tabs or nothing at all. Entries inside `//` or `/* */`
 comments are ignored, as are `#include` and other `#directive` lines.
 
 `setDictEntry` does not add a missing entry, reporting it as an error instead;
 pass `-add` for dictator's behaviour. Scripts should use `setDictEntry` so that a
-mistyped name fails loudly. Removing entries is not supported.
+mistyped name fails loudly. `deleteDictEntry` removes an entry and nothing else:
+naming a sub-dictionary is refused rather than taking an unknown amount of the
+file with it.
 
 The dictionary dialect is set by the variable `dictSyntax`. Only `openfoam` is
 currently defined: entries `key value;` and sub-dictionaries `name { ... }`. The

@@ -5,8 +5,9 @@
 ```
 
 Sources `../dictator` and exercises every public entry point
-(`dictator`, `getDictEntry`, `setDictEntry`, `listDictEntries`) and the
-internal helpers (`_dictHelp`, `_dictator_level`, `_dictator_expand`,
+(`dictator`, `getDictEntry`, `setDictEntry`, `deleteDictEntry`,
+`listDictEntries`) and the internal helpers (`_dictHelp`,
+`_dictator_level`, `_dictator_expand`, `_dictator_optionsOf`,
 `_dictator_complete`) against the fixtures in `fixtures/`. Every check
 prints `ok` or `FAIL <detail>`; a summary and a non-zero exit follow any
 failure.
