@@ -382,7 +382,9 @@ green run means they all agree. `QUIET=1` hides the passing lines;
 ## See also
 
 [cfdTools](https://github.com/isoAdvector/cfdTools) — `parmScanner`, which builds
-and runs a matrix of cases from a base case, using `setDictEntry` from here.
+and runs a matrix of cases from a base case. It addresses parameters by the same
+entry paths as dictator, so dictator's tab completion and `listDictEntries` are a
+handy way to find them.
 
 ## License
 
