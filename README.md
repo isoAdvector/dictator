@@ -90,9 +90,17 @@ dictator system/fvSolution 'solvers."alpha.water.*".nAlphaSubCycles' 4
 ```
 
 A parameter that does not exist yet is added after the last entry of the
-dictionary named in the path. The path is taken at face value, so it is your job
-to check that a new entry landed where you meant it; the `Added` versus `Set`
-message is there to make a typo obvious.
+dictionary named in the path. Sub-dictionaries on the path that do not exist yet
+are created along with it, one key at a time:
+
+```sh
+dictator system/fvSolution solvers.UFinal.solver PBiCG     # Added: UFinal { solver PBiCG; }
+dictator system/fvSolution solvers.UFinal.tolerance 1e-10  # Added inside UFinal
+```
+
+A name on the path that is an entry rather than a dictionary is refused. The path
+is taken at face value, so it is your job to check that a new entry landed where
+you meant it; the `Added` versus `Set` message is there to make a typo obvious.
 
 ### Standard values
 

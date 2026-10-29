@@ -88,19 +88,27 @@ _dictScan() (
     # packed onto one.
     BEGIN { value = ENVIRON["newValue"]; target = ENVIRON["target"]
             lc = length(lcom); bo = length(bopen) }
-    # Position of the last "." in t that separates a parent path from a key. Dots
-    # inside a quoted name, as in solvers."alpha.water.*".tolerance, are part of
-    # the name and are skipped.
-    function lastDot(t,   p, i, q, ch) {
-        p = 0; q = ""
+    # Split t at the dots that separate its components into comp[1..], and return
+    # how many there are. Dots inside a quoted name, as in
+    # solvers."alpha.water.*".tolerance, are part of the name.
+    function splitPath(t, comp,   nc, i, q, ch, st) {
+        nc = 0; q = ""; st = 1
         for (i = 1; i <= length(t); i++) {
             ch = substr(t, i, 1)
             if (q != "") { if (ch == q) q = "" }
             else if (ch == "\"") q = ch
-            else if (ch == ".") p = i
+            else if (ch == ".") { comp[++nc] = substr(t, st, i - st); st = i + 1 }
         }
-        return p
+        comp[++nc] = substr(t, st)
+        return nc
     }
+    # The path made of the first k components
+    function joinPath(comp, k,   j, r) {
+        r = ""
+        for (j = 1; j <= k; j++) r = r comp[j] (j < k ? "." : "")
+        return r
+    }
+    function spaces(m,   r) { r = ""; while (m-- > 0) r = r " "; return r }
     # The dotted path of the dictionary enclosing depth d, "" at the top level
     function pathTo(d,   j, r) {
         r = ""
@@ -131,8 +139,13 @@ _dictScan() (
             } else if (pd) {                                      # inside a list
                 i++                                               # it is all value
             } else if (c == dopen) {                              # sub-dict opens
-                path[++depth] = nTok ? substr(s, kS, kE - kS + 1) : ""; nTok = 0; i++
-                isDict[pathTo(depth)] = 1     # so delete can say what it refused
+                path[++depth] = nTok ? substr(s, kS, kE - kS + 1) : ""; nTok = 0
+                inner = pathTo(depth)
+                isDict[inner] = 1             # so delete can say what it refused
+                # Where each dictionary opens: the insertion point of last resort,
+                # for a dictionary that is still empty
+                openPos[inner] = i; openDepth[inner] = depth
+                i++
             } else if (c == dclose) {                             # sub-dict closes
                 if (depth) {
                     delete path[depth--]
@@ -157,6 +170,7 @@ _dictScan() (
                         vs2 = kE + 1
                         while (vs2 <= i && substr(s, vs2, 1) ~ /[ \t]/) vs2++
                         tailInd[parent] = kS - ls; tailCol[parent] = vs2 - ls
+                        isEntry[full] = 1
                     }
                     # The FoamFile header is noise when browsing, so it is left out
                     # of listings; it can still be read and set by naming it
@@ -180,17 +194,29 @@ _dictScan() (
         # Adding a missing entry when asked for. The path given is taken at face
         # value: if the same name exists in some sub-dict the new entry is still
         # added at the path asked for, and it is up to the caller to check that it
-        # landed where intended.
+        # landed where intended. Sub-dicts on the path that do not exist yet are
+        # created around the entry, inside the deepest one that does.
         if (mode == "set" && add && matches == 0) {
-            k = lastDot(target); key = k ? substr(target, k + 1) : target
-            parent = k ? substr(target, 1, k - 1) : ""
-            if (parent in tailPos) {
-                pos = tailPos[parent]; nInd = tailInd[parent]; nCol = tailCol[parent]
-            } else if (parent in endPos) {
-                pos = endPos[parent]; nInd = 4 * endDepth[parent]; nCol = nInd + 16
-            } else {
-                printf "\"%s\": no dictionary \"%s\" to add it to\n", target, parent > "/dev/stderr"
-                exit 1
+            nc = splitPath(target, comp); key = comp[nc]
+            for (k = nc - 1; k >= 0; k--) {
+                anc = joinPath(comp, k)
+                if (anc in tailPos) {
+                    pos = tailPos[anc]; nInd = tailInd[anc]; nCol = tailCol[anc]; break
+                } else if (anc in endPos) {
+                    pos = endPos[anc]; nInd = 4 * endDepth[anc]; nCol = nInd + 16; break
+                } else if (anc in openPos) {
+                    pos = openPos[anc]; nInd = 4 * openDepth[anc]; nCol = nInd + 16; break
+                } else if (k == 0) {                      # a file with no entries at all
+                    pos = n; nInd = 0; nCol = 16; break
+                }
+            }
+            # A name on the path that is an entry, not a dictionary, cannot hold one
+            if (k < nc - 1) {
+                first = (k ? anc "." : "") comp[k + 1]
+                if (first in isEntry) {
+                    printf "\"%s\": \"%s\" is an entry, not a dictionary\n", target, first > "/dev/stderr"
+                    exit 1
+                }
             }
             # Step past a comment trailing the entry we are inserting after, and
             # past any comment lines below it, so the comment stays with the entry
@@ -206,10 +232,19 @@ _dictScan() (
             }
             pos = q - 1
 
-            ind = ""; for (d = 0; d < nInd; d++) ind = ind " "
-            gap = ""; for (d = nInd + length(key); d < nCol; d++) gap = gap " "
-            if (gap == "") gap = " "
-            printf "%s\n%s%s%s%s%s%s", substr(s, 1, pos), ind, key, gap, value, term, substr(s, pos + 1)
+            # The new sub-dicts, each indented one level deeper, then the entry,
+            # lined up with its siblings if it has any, then the closing braces
+            ins = ""
+            for (j = k + 1; j < nc; j++) {
+                ind = spaces(nInd + 4 * (j - k - 1))
+                ins = ins "\n" ind comp[j] "\n" ind dopen
+            }
+            eInd = nInd + 4 * (nc - 1 - k)
+            if (k < nc - 1) nCol = eInd + 16
+            gap = spaces(nCol - eInd - length(key)); if (gap == "") gap = " "
+            ins = ins "\n" spaces(eInd) key gap value term
+            for (j = nc - 1; j > k; j--) ins = ins "\n" spaces(nInd + 4 * (j - k - 1)) dclose
+            printf "%s%s%s", substr(s, 1, pos), ins, substr(s, pos + 1)
             exit 2                                        # 2 = added rather than replaced
         }
 
@@ -282,8 +317,11 @@ getDictEntry() (
 # Without -add only entries that already exist are modified, so a mistyped name is
 # reported rather than quietly creating a new entry. With -add a missing entry is
 # created instead, placed after the last entry of its dictionary and indented to
-# match. The dictionary it belongs to must already exist. Returns 2 when an entry
-# was added, 0 when one was replaced.
+# match. Sub-dictionaries on the path that do not exist yet are created with it,
+# so "solvers.UFinal.solver PBiCG" adds "UFinal { solver PBiCG; }" to solvers,
+# and later -add calls fill in more keys. A name on the path that is an entry
+# rather than a dictionary is refused. Returns 2 when an entry was added, 0 when
+# one was replaced.
 setDictEntry() (
     addMissing=
     [ "$1" = "-add" ] && { addMissing=1; shift; }
