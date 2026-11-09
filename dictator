@@ -820,8 +820,11 @@ dictator() {
            case "$3" in -delete|-rm) _dictator_delete "$1" "$2"; return $? ;; esac
            # -add: at the keyboard a missing parameter is usually one you want
            # created. The distinct "Added" message is what catches a typo.
-           setDictEntry -add "$1" "$2" "$3"
-           case $? in
+           # Status 2 means "added", not failure; caught with || so that a
+           # script running under set -e does not stop on it.
+           local status=0
+           setDictEntry -add "$1" "$2" "$3" || status=$?
+           case $status in
                0) echo "Set   $2 = $3 in $1" ;;
                2) echo "Added $2 = $3 in $1" ;;
                *) return 1 ;;
@@ -1061,3 +1064,9 @@ _dictator_complete() {
 }
 
 complete -F _dictator_complete dictator
+
+# Export the functions and the variables they read, so that a bash script started
+# from a shell that has sourced dictator can use them without sourcing it again,
+# as it inherits the OpenFOAM environment.
+export _DICTATOR_DIR _DICTATOR_FILES
+export -f dictator setDictEntry getDictEntry deleteDictEntry listDictEntries $(compgen -A function _dict)

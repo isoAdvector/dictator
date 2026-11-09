@@ -98,6 +98,14 @@ dictator system/fvSolution solvers.UFinal.solver PBiCG     # Added: UFinal { sol
 dictator system/fvSolution solvers.UFinal.tolerance 1e-10  # Added inside UFinal
 ```
 
+Sourcing dictator exports its functions, so a bash script started from a shell
+that has sourced it can call dictator without sourcing it again, as it inherits
+the OpenFOAM environment. A script can check for it with
+
+```sh
+type dictator > /dev/null 2>&1 || { echo "Source dictator first" >&2; exit 1; }
+```
+
 A name on the path that is an entry rather than a dictionary is refused. The path
 is taken at face value, so it is your job to check that a new entry landed where
 you meant it; the `Added` versus `Set` message is there to make a typo obvious.

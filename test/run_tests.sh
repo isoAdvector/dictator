@@ -339,6 +339,20 @@ run_suite() {
     run getDictEntry "$f" scalarEntry ; eq "wrapper set took effect" 9.9 "$OUT"
     run dictator "$f" brandNewKey ripe ; rc_is "3 args on missing -> add rc" 0 "$RC"; contains "3 args on missing says Added" "$OUT" "Added"
     run getDictEntry "$f" brandNewKey ; eq "wrapper add took effect" ripe "$OUT"
+    # a script started from a shell that sourced dictator inherits it
+    out=$(cd "$C" && bash --norc --noprofile -c 'type -t dictator; dictator system/testDict inheritedKey 1' 2>&1)
+    contains "a child script inherits dictator" "$out" "function"
+    contains "the inherited dictator adds" "$out" "Added inheritedKey = 1"
+    out=$(cd "$C" && bash --norc --noprofile -c 'dictator system/testDict scalarEntry' 2>&1)
+    eq "the inherited dictator reads" 9.9 "$out"
+    # under set -e a script goes on after a set, an add, a read and a delete,
+    # and stops on a real failure
+    out=$(cd "$C" && bash --norc --noprofile -c 'set -e; dictator system/testDict scalarEntry 1.5 > /dev/null
+        dictator system/testDict setEKey 1 > /dev/null; v=$(dictator system/testDict setEKey)
+        dictator system/testDict setEKey -delete > /dev/null; echo "reached $v"' 2>&1)
+    eq "set -e: set, add, read and delete go on" "reached 1" "$out"
+    out=$(cd "$C" && bash --norc --noprofile -c 'set -e; dictator system/noSuchFile key 1; echo reached' 2>&1)
+    not_contains "set -e: a missing file stops the script" "$out" "reached"
     run dictator ; rc_is "no args rc" 1 "$RC"; contains "no args prints usage" "$ERR" "Usage: dictator"
     run dictator "$f" a b c ; rc_is "too many args rc" 1 "$RC"; contains "too many args prints usage" "$ERR" "Usage: dictator"
     run dictator -help ; rc_is "-help rc" 0 "$RC"
